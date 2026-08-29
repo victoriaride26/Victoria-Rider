@@ -1,0 +1,58 @@
+name: vtrides
+description: "VT Rides — rider ride-hailing app by Victoria Travels Bus Company Ltd"
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.0-158.0.dev
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The following adds the Cupertino Icons font to your application.
+  cupertino_icons: ^1.0.8
+  flutter_map: ^8.3.1
+  latlong2: ^0.10.1
+  geolocator: ^14.0.3
+  http: ^1.6.0
+  flutter_secure_storage: 10.0.0-beta.4
+  file_picker: 12.0.0
+  meta: ^1.19.0
+  google_mlkit_face_detection: ^0.15.1
+  image_picker: ^1.2.3
+  permission_handler: ^11.3.1
+  flutter_local_notifications: ^18.0.1
+  shared_preferences: ^2.3.3
+  flutter_dotenv: ^5.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+
+  uses-material-design: true
+
+  assets:
+    - assets/icons/
+    - assets/images/
+    - assets/images/splash/
+    - assets/fonts/
+    - .env
+
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
