@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import 'login_screen.dart';
 import 'phone_login_screen.dart';
 
 /// R-02 — Get Started: value proposition + entry into the auth flow.
@@ -98,6 +99,17 @@ class GetStartedScreen extends StatelessWidget {
                       Icon(Icons.arrow_forward, size: 20),
                     ],
                   ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                      builder: (_) => const LoginScreen()),
+                ),
+                child: const Text(
+                  'Already have an account? Login',
+                  style: TextStyle(color: AppColors.primary),
                 ),
               ),
               const SizedBox(height: 16),

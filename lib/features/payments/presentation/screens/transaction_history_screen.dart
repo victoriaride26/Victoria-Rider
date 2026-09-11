@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_back_button.dart';
 import '../../../rider/presentation/widgets/rider_scaffold.dart';
 
 /// R-17 — Transaction History.
@@ -41,11 +42,9 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
           children: [
             Row(
               children: [
-                IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.menu, color: AppColors.onSurface)),
+                const AppBackButton(),
                 const SizedBox(width: 8),
-                Text('Wallet', style: theme.textTheme.headlineMedium),
+                Text('Transactions', style: theme.textTheme.headlineMedium),
               ],
             ),
             const SizedBox(height: 16),

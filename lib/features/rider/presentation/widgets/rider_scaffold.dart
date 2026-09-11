@@ -3,37 +3,46 @@ import 'package:flutter/material.dart';
 import 'rider_bottom_nav.dart';
 import '../screens/rider_home_shell.dart';
 
-/// Scaffold wrapper that renders the rider bottom navigation bar.
+/// Scaffold wrapper for rider screens.
 ///
-/// Tapping a tab replaces the current route with the [RiderHomeShell] at
-/// the chosen index, so the bottom nav behaves like a persistent shell.
+/// By default [showBottomNav] is false because the primary shell
+/// ([RiderHomeShell]) hosts the persistent bottom navigation bar. Set
+/// [showBottomNav] to true only if displaying outside of the shell.
 class RiderScaffold extends StatelessWidget {
   const RiderScaffold({
     super.key,
-    required this.currentIndex,
+    this.currentIndex = 0,
     required this.body,
     this.appBar,
+    this.drawer,
     this.floatingActionButton,
+    this.showBottomNav = false,
   });
 
   final int currentIndex;
   final Widget body;
   final PreferredSizeWidget? appBar;
+  final Widget? drawer;
   final Widget? floatingActionButton;
+  final bool showBottomNav;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: appBar,
+      drawer: drawer,
       body: body,
       floatingActionButton: floatingActionButton,
-      bottomNavigationBar: RiderBottomNav(
-        currentIndex: currentIndex,
-        onTap: (i) => Navigator.pushReplacement(
-          context,
-          MaterialPageRoute<void>(builder: (_) => RiderHomeShell(initialIndex: i)),
-        ),
-      ),
+      bottomNavigationBar: showBottomNav
+          ? RiderBottomNav(
+              currentIndex: currentIndex,
+              onTap: (i) => Navigator.pushReplacement(
+                context,
+                MaterialPageRoute<void>(
+                    builder: (_) => RiderHomeShell(initialIndex: i)),
+              ),
+            )
+          : null,
     );
   }
 }

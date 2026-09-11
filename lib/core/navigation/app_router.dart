@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../features/auth/data/auth_repository.dart';
+import '../../features/rider/presentation/screens/rider_home_shell.dart';
 import '../network/api_client.dart';
 import '../services/session_controller.dart';
 
 /// Resolves the next destination for an authenticated rider.
 ///
-/// The driver's router gated on KYC/approval state; riders will gate on
-/// their own onboarding/profile state. Implement [resolveDestination] when
-/// the rider's home shell and onboarding screens exist.
+/// Riders have no KYC/approval gate (that's driver-only), so a rider with a
+/// valid session always lands on [RiderHomeShell].
 abstract final class AppRouter {
   AppRouter._();
 
@@ -23,6 +23,11 @@ abstract final class AppRouter {
     } on ApiException {
       return false;
     }
+  }
+
+  /// Resolves the next screen for a signed-in rider.
+  static Future<Widget> resolveDestination() async {
+    return const RiderHomeShell();
   }
 
   /// Pushes [destination] as the new root, removing every route below it

@@ -1,0 +1,12 @@
+flutter_launcher_icons:
+  image_path: "assets/icons/logo.png"
+
+  android:
+    enable: true
+    package: "ng.com.victoriatravels.vtrides"
+    adaptive_icon_foreground: "assets/icons/logo.png"
+    adaptive_icon_background: "#002106"
+
+  ios:
+    enable: true
+    image_path: "assets/icons/logo.png"

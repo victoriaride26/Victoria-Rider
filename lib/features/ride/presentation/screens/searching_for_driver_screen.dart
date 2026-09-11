@@ -6,7 +6,10 @@ import '../../../../core/widgets/app_primary_button.dart';
 
 /// R-09 — Searching for Driver.
 class SearchingForDriverScreen extends StatelessWidget {
-  const SearchingForDriverScreen({super.key});
+  const SearchingForDriverScreen({super.key, this.rideId});
+
+  /// The ride ID returned by the backend after creating the ride.
+  final String? rideId;
 
   @override
   Widget build(BuildContext context) {

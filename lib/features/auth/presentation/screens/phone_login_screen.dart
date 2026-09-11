@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
+import '../../data/auth_repository.dart';
 import 'otp_verification_screen.dart';
 
 /// R-03 — Phone Login: collect the rider's phone number.
@@ -15,19 +17,56 @@ class PhoneLoginScreen extends StatefulWidget {
 
 class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   final _phone = TextEditingController();
+  final _countryCode = TextEditingController(text: '+234');
+  bool _loading = false;
+  String? _error;
 
   @override
   void dispose() {
     _phone.dispose();
+    _countryCode.dispose();
     super.dispose();
   }
 
-  void _sendOtp() {
-    final number = _phone.text.trim();
-    if (number.isEmpty) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const OtpVerificationScreen()),
-    );
+  Future<void> _sendOtp() async {
+    final raw = _phone.text.trim();
+    final code = _countryCode.text.trim();
+    if (raw.isEmpty) return;
+    if (_loading) return;
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      // Always send the phone in the exact normalized E.164 form the backend
+      // expects (no '+', no spacing, country code prefix). Sending a raw
+      // '+234...' string makes the backend's phoneVerification write fail
+      // ("value too long for column") — see AuthRepository.normalizePhone.
+      final phone = AuthRepository.normalizePhone(code + raw);
+      await AuthRepository.instance.sendPhoneOtp(phone);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => OtpVerificationScreen(
+            phone: phone,
+            countryCode: code,
+          ),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Something went wrong. Please try again.';
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -60,60 +99,72 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
               ),
               const SizedBox(height: 32),
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  InkWell(
-                    onTap: () {},
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      height: 56,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceContainerLowest,
-                        border: Border.all(color: AppColors.outline),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        children: [
-                          Text('+234', style: TextStyle(fontSize: 16)),
-                          SizedBox(width: 4),
-                          Icon(Icons.keyboard_arrow_down,
-                              color: AppColors.outline),
-                        ],
+                  SizedBox(
+                    width: 120,
+                    child: TextField(
+                      controller: _countryCode,
+                      readOnly: true,
+                      showCursor: false,
+                      enableInteractiveSelection: false,
+                      onTap: () {},
+                      style: theme.textTheme.bodyLarge,
+                      decoration: InputDecoration(
+                        suffixIcon: const Icon(Icons.keyboard_arrow_down,
+                            color: AppColors.outline),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide:
+                              const BorderSide(color: AppColors.outline),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(
+                              color: AppColors.primary, width: 2),
+                        ),
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 16),
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: SizedBox(
-                      height: 56,
-                      child: TextField(
-                        controller: _phone,
-                        keyboardType: TextInputType.phone,
-                        textInputAction: TextInputAction.done,
-                        style: theme.textTheme.bodyLarge,
-                        decoration: InputDecoration(
-                          hintText: 'Phone number',
-                          hintStyle: theme.textTheme.bodyLarge
-                              ?.copyWith(color: AppColors.outlineVariant),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: AppColors.outline),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(
-                                color: AppColors.primary, width: 2),
-                          ),
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextField(
+                      controller: _phone,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.done,
+                      style: theme.textTheme.bodyLarge,
+                      decoration: InputDecoration(
+                        hintText: 'Phone number',
+                        hintStyle: theme.textTheme.bodyLarge
+                            ?.copyWith(color: AppColors.outlineVariant),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide:
+                              const BorderSide(color: AppColors.outline),
                         ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(
+                              color: AppColors.primary, width: 2),
+                        ),
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 16),
                       ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
+              if (_error != null) ...[
+                Text(
+                  _error!,
+                  style: theme.textTheme.labelMedium
+                      ?.copyWith(color: AppColors.error),
+                ),
+                const SizedBox(height: 8),
+              ],
               Row(
                 children: [
                   const Icon(Icons.info_outline,
@@ -121,7 +172,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      "We'll send you a 4-digit code to verify your number. "
+                      "We'll send you a 6-digit code to verify your number. "
                       'Carrier charges may apply.',
                       style: theme.textTheme.labelMedium
                           ?.copyWith(color: AppColors.onSurfaceVariant),
@@ -133,6 +184,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
               AppPrimaryButton(
                 label: 'Send OTP',
                 icon: Icons.arrow_forward,
+                loading: _loading,
                 onPressed: _sendOtp,
               ),
             ],

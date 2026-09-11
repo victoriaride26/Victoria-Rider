@@ -1,9 +1,10 @@
 /// Backend API endpoints for the Victoria Ride platform.
 ///
-/// See https://victoria-ride-api.vercel.app/api-docs/ for the live spec.
+/// See https://historical-irma-easyclickictltd-90ebad9c.koyeb.app/api-docs/ for the live spec.
 abstract final class ApiConfig {
   /// Base URL of the Victoria Ride API (no trailing slash).
-  static const String baseUrl = 'https://victoria-ride-api.vercel.app';
+  static const String baseUrl =
+      'https://historical-irma-easyclickictltd-90ebad9c.koyeb.app';
 
   /// All routes are versioned under /api/v1.
   static const String apiV1 = '$baseUrl/api/v1';
@@ -45,6 +46,13 @@ abstract final class ApiConfig {
   static const String walletTransactions = '$apiV1/drivers/wallet/transactions';
   static const String walletBankAccount = '$apiV1/drivers/wallet/bank-account';
   static const String walletWithdraw = '$apiV1/drivers/wallet/withdraw';
+
+  // --- Rider Wallet ---
+  static const String riderWallet = '$apiV1/wallet';
+  static const String riderWalletFund = '$apiV1/wallet/fund';
+  static String riderWalletFundVerify(String reference) =>
+      '$apiV1/wallet/fund/verify/$reference';
+  static const String riderWalletTransactions = '$apiV1/wallet/transactions';
 
   // --- Rides (driver state machine) ---
   static String rideStatus(String rideId) =>

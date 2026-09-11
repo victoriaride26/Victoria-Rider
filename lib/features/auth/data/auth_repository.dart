@@ -34,13 +34,14 @@ class AuthRepository {
 
   final ApiClient _api = ApiClient.instance;
 
-  /// POST /auth/register — creates a DRIVER account.
+  /// POST /auth/register — creates a user account (defaults to a rider).
   Future<void> register({
     required String firstName,
     required String lastName,
     required String email,
     required String password,
     required String phone,
+    String role = 'RIDER',
   }) async {
     await _api.post(
       ApiConfig.register,
@@ -49,8 +50,8 @@ class AuthRepository {
         'lastName': lastName.trim(),
         'email': email.trim(),
         'password': password,
-        'phone': phone.trim(),
-        'role': 'DRIVER',
+        'phone': normalizePhone(phone),
+        'role': role,
       },
     );
   }
@@ -183,9 +184,27 @@ class AuthRepository {
   ///
   /// Retries once on a server error (5xx); the endpoint has been seen
   /// to fail transiently ("illegal length" 500s) before succeeding.
-  Future<void> sendPhoneOtp(String phone) async {
+  ///
+  /// Returns the OTP echoed by the server. THIS IS DEV-ONLY — the backend
+  /// returns `otp` in the response solely for app testing during development
+  /// and must be removed/reversed in production. Do not rely on, log, or
+  /// ship this value in a release build.
+  ///
+  // TODO(dev-only): strip this before release. In production the caller must
+  // NOT receive the OTP from the API — the code should arrive only via the
+  // actual SMS. Gate this return on !kReleaseMode (see otp_verification_screen)
+  // and delete it once the backend stops echoing otp.
+  Future<String?> sendPhoneOtp(String phone) async {
     final normalized = normalizePhone(phone);
-    await _postWithRetry(ApiConfig.phoneSendOtp, {'phone': normalized});
+    final data = await _postWithRetry(
+      ApiConfig.phoneSendOtp,
+      {'phone': normalized},
+    );
+    if (data is Map<String, dynamic>) {
+      final otp = data['otp'];
+      return otp is String && otp.isNotEmpty ? otp : null;
+    }
+    return null;
   }
 
   /// POST /auth/phone/verify-otp — confirms the phone number.
