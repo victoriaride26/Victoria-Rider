@@ -20,64 +20,77 @@ class SearchingForDriverScreen extends StatelessWidget {
         title: const Text('Searching for Driver'),
       ),
       body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 16),
+                Container(
+                  width: 104,
+                  height: 104,
+                  decoration: const BoxDecoration(
+                    color: AppColors.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.directions_car,
+                      size: 48, color: AppColors.onPrimaryContainer),
+                ),
+                const SizedBox(height: 24),
+                Text('Finding your Victoria driver nearby...',
+                    style: theme.textTheme.headlineMedium,
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 8),
+                Text(
+                  'Matching with the best route for your premium journey.',
+                  style: theme.textTheme.bodyLarge
+                      ?.copyWith(color: AppColors.onSurfaceVariant),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2.5, color: AppColors.primary),
+                      ),
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Text(
+                          'Live Search',
+                          style: theme.textTheme.titleLarge,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text('Est. 2 mins',
+                          style: theme.textTheme.labelMedium
+                              ?.copyWith(color: AppColors.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              const SizedBox(height: 32),
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryContainer,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.directions_car,
-                    size: 56, color: AppColors.onPrimaryContainer),
-              ),
-              const SizedBox(height: 28),
-              Text('Finding your Victoria driver nearby...',
-                  style: theme.textTheme.headlineMedium,
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 8),
-              Text(
-                'Matching with the best route for your premium journey.',
-                style: theme.textTheme.bodyLarge
-                    ?.copyWith(color: AppColors.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5, color: AppColors.primary),
-                    ),
-                    const SizedBox(width: 12),
-                    Text('Live Search',
-                        style: theme.textTheme.titleLarge),
-                    const SizedBox(width: 12),
-                    Text('Est. 2 mins',
-                        style: theme.textTheme.labelMedium
-                            ?.copyWith(color: AppColors.onSurfaceVariant)),
-                  ],
-                ),
-              ),
-              const Spacer(),
-              AppPrimaryButton(
-                label: 'Cancel Request',
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          child: AppPrimaryButton(
+            label: 'Cancel Request',
+            onPressed: () => Navigator.of(context).pop(),
           ),
         ),
       ),
