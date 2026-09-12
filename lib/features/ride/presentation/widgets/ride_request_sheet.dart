@@ -81,11 +81,13 @@ class _RideRequestSheetState extends State<RideRequestSheet>
     _PayOption('card', Icons.credit_card, 'Card'),
   ];
 
-  /// Multipliers for each vehicle tier relative to Standard.
+  /// Multipliers for each vehicle tier relative to Standard per backend pricing rules.
   static const _fareMultipliers = {
     'standard': 1.0,
-    'comfort': 1.35,
-    'xl': 1.6,
+    'comfort': 1.5,
+    'premium': 1.5,
+    'xl': 1.5,
+    'bike': 0.5,
   };
 
   @override
@@ -122,6 +124,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
         pickupLabel: pickupLabel,
         destination: widget.destination.location,
         destinationLabel: widget.destination.shortName,
+        vehicleType: _selectedVehicle,
       );
       if (mounted) setState(() => _estimate = est);
     } catch (e) {
@@ -171,6 +174,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
           pickupLabel: fresh.shortLabel,
           destination: widget.destination.location,
           destinationLabel: widget.destination.shortName,
+          vehicleType: _selectedVehicle,
         );
         if (mounted) setState(() => _estimate = est);
       } catch (_) {

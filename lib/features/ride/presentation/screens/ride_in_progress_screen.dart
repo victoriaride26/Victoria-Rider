@@ -5,6 +5,7 @@ import '../../../../core/config/mapbox_config.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_primary_button.dart';
 import '../../../../core/widgets/mapbox_map_view.dart';
+import '../widgets/in_ride_chat_sheet.dart';
 import 'trip_completed_screen.dart';
 
 /// R-11 — Ride in Progress.
@@ -91,7 +92,13 @@ class RideInProgressScreen extends StatelessWidget {
                         IconButton(
                             onPressed: () {}, icon: const Icon(Icons.call)),
                         IconButton(
-                            onPressed: () {},
+                            onPressed: () {
+                              InRideChatSheet.show(
+                                context,
+                                rideId: 'active_ride',
+                                driverName: 'Terwase O.',
+                              );
+                            },
                             icon: const Icon(Icons.chat_bubble_outline)),
                       ],
                     ),

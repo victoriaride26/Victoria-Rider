@@ -54,7 +54,9 @@ abstract final class ApiConfig {
       '$apiV1/wallet/fund/verify/$reference';
   static const String riderWalletTransactions = '$apiV1/wallet/transactions';
 
-  // --- Rides (driver state machine) ---
+  // --- Rides ---
+  static const String rideEstimate = '$apiV1/rides/estimate';
+  static const String rideRequest = '$apiV1/rides/request';
   static String rideStatus(String rideId) =>
       '$apiV1/rides/$rideId/status';
   static String rideAccept(String rideId) => '$apiV1/rides/$rideId/accept';

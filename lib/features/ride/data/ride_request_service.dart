@@ -52,21 +52,87 @@ class RideRequestService {
     _http.close();
   }
 
-  /// Minimum base fare in Naira.
-  static const double _baseFareNgn = 300;
+  /// Base fare in Naira.
+  static const double _baseFareNgn = 500;
 
   /// Per-km rate in Naira.
-  static const double _perKmNgn = 180;
+  static const double _perKmNgn = 150;
+
+  /// Returns multiplier for a given vehicle type.
+  static double vehicleMultiplier(String vehicleType) => switch (vehicleType.toLowerCase()) {
+        'premium' || 'comfort' || 'xl' => 1.5,
+        'bike' || 'motorcycle' => 0.5,
+        _ => 1.0,
+      };
 
   /// Computes a [RideEstimate] for the given pickup → destination pair.
   ///
-  /// Falls back to straight-line distance if the Directions API is unavailable.
+  /// First calls backend `POST /api/v1/rides/estimate`.
+  /// Falls back to local Directions API / straight-line calculation if offline.
   Future<RideEstimate> estimate({
     required LatLng pickup,
     required String pickupLabel,
     required LatLng destination,
     required String destinationLabel,
+    String vehicleType = 'standard',
   }) async {
+    // 1. Attempt backend estimation first
+    try {
+      final token = SessionController.instance.accessToken;
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      };
+
+      final body = jsonEncode({
+        'pickupLocation': {
+          'lat': pickup.latitude,
+          'lng': pickup.longitude,
+          'address': pickupLabel,
+        },
+        'destinationLocation': {
+          'lat': destination.latitude,
+          'lng': destination.longitude,
+          'address': destinationLabel,
+        },
+        'vehicleType': vehicleType,
+      });
+
+      final response = await _http
+          .post(
+            Uri.parse(ApiConfig.rideEstimate),
+            headers: headers,
+            body: body,
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>?;
+        final data = decoded?['data'] as Map<String, dynamic>? ?? decoded;
+        if (data != null && (data['estimatedFare'] != null || data['fare'] != null)) {
+          final fare = ((data['estimatedFare'] ?? data['fare']) as num).toDouble();
+          final distance = ((data['estimatedDistance'] ?? data['distanceKm'] ?? data['distance']) as num?)?.toDouble() ??
+              const Distance().as(LengthUnit.Meter, pickup, destination) / 1000;
+          final duration = ((data['estimatedDuration'] ?? data['durationMinutes'] ?? data['duration']) as num?)?.toInt() ??
+              ((distance / 30) * 60).ceil();
+
+          return RideEstimate(
+            pickupLabel: pickupLabel,
+            destinationLabel: destinationLabel,
+            pickupLatLng: pickup,
+            destinationLatLng: destination,
+            distanceKm: distance,
+            durationMinutes: duration,
+            fareNgn: fare,
+          );
+        }
+      }
+    } catch (_) {
+      // Fallback to local calculation
+    }
+
+    // 2. Local fallback calculation
     final route = await _directions.getRoute(
       origin: pickup,
       destination: destination,
@@ -86,8 +152,9 @@ class RideRequestService {
     }
 
     final distanceKm = distanceMeters / 1000;
-    final fareNgn = (_baseFareNgn + distanceKm * _perKmNgn).clamp(
-      _baseFareNgn,
+    final multiplier = vehicleMultiplier(vehicleType);
+    final fareNgn = ((_baseFareNgn + distanceKm * _perKmNgn) * multiplier).clamp(
+      _baseFareNgn * multiplier,
       double.infinity,
     );
 
@@ -138,7 +205,7 @@ class RideRequestService {
 
       final response = await _http
           .post(
-            Uri.parse('${ApiConfig.apiV1}/rides/request'),
+            Uri.parse(ApiConfig.rideRequest),
             headers: headers,
             body: body,
           )

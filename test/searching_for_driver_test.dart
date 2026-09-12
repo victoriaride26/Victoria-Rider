@@ -15,7 +15,10 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,
-        home: const SearchingForDriverScreen(rideId: 'test-ride-123'),
+        home: const SearchingForDriverScreen(
+          rideId: 'test-ride-123',
+          enableRealtime: false,
+        ),
       ),
     );
 
