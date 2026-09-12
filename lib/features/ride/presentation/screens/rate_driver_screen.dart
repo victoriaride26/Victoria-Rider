@@ -7,7 +7,14 @@ import '../../../rider/presentation/screens/rider_home_shell.dart';
 
 /// R-13 — Rate Your Driver.
 class RateDriverScreen extends StatefulWidget {
-  const RateDriverScreen({super.key});
+  const RateDriverScreen({
+    super.key,
+    this.rideId,
+    this.driverName,
+  });
+
+  final String? rideId;
+  final String? driverName;
 
   @override
   State<RateDriverScreen> createState() => _RateDriverScreenState();
@@ -22,6 +29,8 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final firstName = (widget.driverName ?? 'Terwase').split(' ').first;
+
     return Scaffold(
       appBar: AppBar(
         leading: const AppBackButton(),
@@ -45,7 +54,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                     color: AppColors.onPrimaryContainer),
               ),
               const SizedBox(height: 16),
-              Text('How was your ride with Terwase?',
+              Text('How was your ride with $firstName?',
                   style: theme.textTheme.headlineMedium,
                   textAlign: TextAlign.center),
               const SizedBox(height: 8),
