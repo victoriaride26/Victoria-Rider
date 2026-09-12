@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/services/fcm_service.dart';
 import '../../../../core/services/session_controller.dart';
 
 /// Social identity providers supported by `/auth/social-login`.
@@ -281,6 +284,7 @@ class AuthRepository {
       refreshToken: refresh,
       user: user,
     );
+    unawaited(FcmService.instance.syncToken());
     return AuthSession(accessToken: access, refreshToken: refresh, user: user);
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'core/constants/app_constants.dart';
 import 'core/services/background_location_service.dart';
+import 'core/services/fcm_service.dart';
 import 'core/services/notification_tray_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/screens/splash_screen.dart';
@@ -23,6 +24,13 @@ Future<void> main() async {
   // if denied we continue — in-app list still works.
   try {
     await NotificationTrayService.instance.init();
+  } catch (_) {
+    // Tests / unsupported platforms — ignore.
+  }
+
+  // Push notifications (Firebase Cloud Messaging).
+  try {
+    unawaited(FcmService.instance.init());
   } catch (_) {
     // Tests / unsupported platforms — ignore.
   }

@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "359279437178",
+    "project_id": "vt-rides-driver",
+    "storage_bucket": "vt-rides-driver.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:359279437178:android:f2cc8361ea343922f4e2c3",
+        "android_client_info": {
+          "package_name": "ng.com.victoriatravels.victoriarides"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA6MNueBm8usPc_akeQDqfSmS7xoVQ_h2k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:359279437178:android:473201f0ebe3a758f4e2c3",
+        "android_client_info": {
+          "package_name": "ng.com.victoriatravels.vtrides"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA6MNueBm8usPc_akeQDqfSmS7xoVQ_h2k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
