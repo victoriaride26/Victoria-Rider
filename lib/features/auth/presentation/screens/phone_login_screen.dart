@@ -9,7 +9,10 @@ import 'otp_verification_screen.dart';
 
 /// R-03 — Phone Login: collect the rider's phone number.
 class PhoneLoginScreen extends StatefulWidget {
-  const PhoneLoginScreen({super.key});
+  const PhoneLoginScreen({super.key, this.onboardingToken});
+
+  /// Optional onboarding token carried from social login when phone verification is needed.
+  final String? onboardingToken;
 
   @override
   State<PhoneLoginScreen> createState() => _PhoneLoginScreenState();
@@ -31,7 +34,15 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   Future<void> _sendOtp() async {
     final raw = _phone.text.trim();
     final code = _countryCode.text.trim();
-    if (raw.isEmpty) return;
+    if (raw.isEmpty) {
+      setState(() => _error = 'Please enter your phone number');
+      return;
+    }
+    final pureDigits = raw.replaceAll(RegExp(r'\D'), '');
+    if (pureDigits.length < 7) {
+      setState(() => _error = 'Please enter a valid phone number');
+      return;
+    }
     if (_loading) return;
 
     setState(() {
@@ -39,25 +50,28 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       _error = null;
     });
     try {
-      // Always send the phone in the exact normalized E.164 form the backend
-      // expects (no '+', no spacing, country code prefix). Sending a raw
-      // '+234...' string makes the backend's phoneVerification write fail
-      // ("value too long for column") — see AuthRepository.normalizePhone.
-      final phone = AuthRepository.normalizePhone(code + raw);
-      await AuthRepository.instance.sendPhoneOtp(phone);
+      // Normalize to E.164 without '+' (e.g. 2348012345678).
+      final phone = AuthRepository.normalizePhone(raw, countryCode: code);
+      await AuthRepository.instance.sendPhoneOtp(
+        phone,
+        onboardingToken: widget.onboardingToken,
+      );
       if (!mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => OtpVerificationScreen(
             phone: phone,
             countryCode: code,
+            onboardingToken: widget.onboardingToken,
           ),
         ),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.message;
+        _error = e.isServerError
+            ? 'Server is temporarily busy. Please tap to try again.'
+            : e.message;
         _loading = false;
       });
     } catch (e) {

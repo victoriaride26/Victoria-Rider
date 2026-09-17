@@ -33,6 +33,7 @@ class MapboxMapView extends StatefulWidget {
     this.showUserLocation = false,
     this.followUser = false,
     this.onUserPosition,
+    this.mapController,
   });
 
   final LatLng center;
@@ -44,6 +45,7 @@ class MapboxMapView extends StatefulWidget {
   final bool showUserLocation;
   final bool followUser;
   final ValueChanged<LatLng>? onUserPosition;
+  final MapController? mapController;
 
   @override
   State<MapboxMapView> createState() => _MapboxMapViewState();
@@ -52,7 +54,10 @@ class MapboxMapView extends StatefulWidget {
 class _MapboxMapViewState extends State<MapboxMapView> {
   static const _mapboxFailThreshold = 6;
 
-  final MapController _mapController = MapController();
+  final MapController _internalMapController = MapController();
+  MapController get _controller =>
+      widget.mapController ?? _internalMapController;
+
   final Set<String> _errors = {};
   Timer? _loadingTimer;
   bool _showLoading = true;
@@ -74,6 +79,17 @@ class _MapboxMapViewState extends State<MapboxMapView> {
     });
     if (widget.showUserLocation) {
       _initLocation();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MapboxMapView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.followUser &&
+        (widget.center != oldWidget.center || widget.zoom != oldWidget.zoom)) {
+      try {
+        _controller.move(widget.center, widget.zoom);
+      } catch (_) {}
     }
   }
 
@@ -157,7 +173,7 @@ Future<void> _initLocation() async {
 
     setState(() => _userPosition = latLng);
     if (widget.followUser) {
-      _mapController.move(latLng, widget.zoom);
+      _controller.move(latLng, widget.zoom);
     }
     widget.onUserPosition?.call(latLng);
   }
@@ -227,7 +243,7 @@ Future<void> _initLocation() async {
       fit: StackFit.expand,
       children: [
         FlutterMap(
-          mapController: _mapController,
+          mapController: _controller,
           options: MapOptions(
             initialCenter: widget.center,
             initialZoom: widget.zoom,

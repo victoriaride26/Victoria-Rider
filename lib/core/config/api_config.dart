@@ -64,6 +64,7 @@ abstract final class ApiConfig {
   static String rideStart(String rideId) => '$apiV1/rides/$rideId/start';
   static String rideCancel(String rideId) => '$apiV1/rides/$rideId/cancel';
   static String rideComplete(String rideId) => '$apiV1/rides/$rideId/complete';
+  static String rideChat(String rideId) => '$apiV1/rides/$rideId/chat';
 
   // --- Locations ---
   static const String locationsCountries = '$apiV1/locations/countries';

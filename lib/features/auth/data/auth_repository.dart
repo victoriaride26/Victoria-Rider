@@ -95,6 +95,7 @@ class AuthRepository {
           (data['tokens'] is Map &&
               (data['tokens'] as Map)['accessToken'] != null);
       if (!hasTokens && onboardingToken is String && onboardingToken.isNotEmpty) {
+        SessionController.instance.onboardingToken = onboardingToken;
         return SocialLoginResult(onboardingToken: onboardingToken);
       }
     }
@@ -171,10 +172,8 @@ class AuthRepository {
     var digits = raw.replaceAll(RegExp(r'\D'), '');
     // Strip international prefixes and duplicate country codes.
     if (digits.startsWith('00')) digits = digits.substring(2);
-    if (digits.startsWith(cc)) {
+    while (digits.startsWith(cc)) {
       digits = digits.substring(cc.length);
-    } else if (cc.length > 1 && digits.startsWith(cc.substring(1))) {
-      digits = digits.substring(cc.length - 1);
     }
     // Local trunk zero(s): 0803... -> 803...
     while (digits.startsWith('0')) {
@@ -185,8 +184,9 @@ class AuthRepository {
 
   /// POST /auth/phone/send-otp — requests a phone verification OTP.
   ///
-  /// Retries once on a server error (5xx); the endpoint has been seen
-  /// to fail transiently ("illegal length" 500s) before succeeding.
+  /// Retries on transient server errors (5xx) with backoff; the endpoint
+  /// has been seen to fail intermittently ("illegal length" Prisma 500s)
+  /// before succeeding on immediate subsequent attempts.
   ///
   /// Returns the OTP echoed by the server. THIS IS DEV-ONLY — the backend
   /// returns `otp` in the response solely for app testing during development
@@ -197,11 +197,13 @@ class AuthRepository {
   // NOT receive the OTP from the API — the code should arrive only via the
   // actual SMS. Gate this return on !kReleaseMode (see otp_verification_screen)
   // and delete it once the backend stops echoing otp.
-  Future<String?> sendPhoneOtp(String phone) async {
+  Future<String?> sendPhoneOtp(String phone, {String? onboardingToken}) async {
     final normalized = normalizePhone(phone);
+    final token = onboardingToken ?? SessionController.instance.onboardingToken;
     final data = await _postWithRetry(
       ApiConfig.phoneSendOtp,
       {'phone': normalized},
+      token: token,
     );
     if (data is Map<String, dynamic>) {
       final otp = data['otp'];
@@ -217,22 +219,35 @@ class AuthRepository {
   Future<void> verifyPhoneOtp({
     required String phone,
     required String otp,
+    String? onboardingToken,
   }) async {
     final normalized = normalizePhone(phone);
+    final token = onboardingToken ?? SessionController.instance.onboardingToken;
     await _postWithRetry(
       ApiConfig.phoneVerifyOtp,
       {'phone': normalized, 'otp': otp},
+      token: token,
     );
   }
 
-  /// POSTs [body] once, retrying a single time when the server answers
-  /// 5xx. Client errors (4xx) surface immediately.
-  Future<dynamic> _postWithRetry(String path, Map<String, dynamic> body) async {
-    try {
-      return await _api.post(path, body: body);
-    } on ApiException catch (e) {
-      if (!e.isServerError) rethrow;
-      return _api.post(path, body: body);
+  /// POSTs [body] once, retrying up to [maxRetries] times with backoff
+  /// when the server answers 5xx (transient database / Prisma errors).
+  /// Client errors (4xx) surface immediately.
+  Future<dynamic> _postWithRetry(
+    String path,
+    Map<String, dynamic> body, {
+    String? token,
+    int maxRetries = 3,
+  }) async {
+    for (var attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await _api.post(path, body: body, token: token);
+      } on ApiException catch (e) {
+        if (!e.isServerError || attempt == maxRetries) rethrow;
+        await Future<void>.delayed(
+          Duration(milliseconds: 250 * (attempt + 1)),
+        );
+      }
     }
   }
 

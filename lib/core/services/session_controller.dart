@@ -68,6 +68,10 @@ class SessionController {
   String? accessToken;
   String? refreshToken;
 
+  /// Temporary onboarding token received from /auth/social-login when phone
+  /// verification is required before full session issuance.
+  String? onboardingToken;
+
   /// When false, tokens are kept in memory only and never written to
   /// secure storage, so the session does not survive an app restart.
   bool rememberMe = true;
@@ -82,8 +86,19 @@ class SessionController {
   /// names/email.
   Map<String, dynamic>? user;
 
-  bool get hasSession =>
-      accessToken != null && accessToken!.isNotEmpty;
+  static bool _isValidToken(String? token) {
+    if (token == null) return false;
+    final trimmed = token.trim();
+    if (trimmed.isEmpty) return false;
+    final lower = trimmed.toLowerCase();
+    return lower != 'null' &&
+        lower != 'undefined' &&
+        lower != 'bearer null' &&
+        lower != 'bearer undefined' &&
+        lower != 'bearer';
+  }
+
+  bool get hasSession => _isValidToken(accessToken);
 
   /// Loads the persisted "remember me" preference and email. Call once at
   /// startup before relying on [rememberMe] / [rememberedEmail].
@@ -106,8 +121,10 @@ class SessionController {
   Future<bool> restore() async {
     await loadPrefs();
     try {
-      accessToken = await tokenStore.read(_kAccessToken);
-      refreshToken = await tokenStore.read(_kRefreshToken);
+      final rawAccess = await tokenStore.read(_kAccessToken);
+      final rawRefresh = await tokenStore.read(_kRefreshToken);
+      accessToken = _isValidToken(rawAccess) ? rawAccess!.trim() : null;
+      refreshToken = _isValidToken(rawRefresh) ? rawRefresh!.trim() : null;
       final rawUser = await tokenStore.read(_kUser);
       if (rawUser != null && rawUser.isNotEmpty) {
         user = jsonDecode(rawUser) as Map<String, dynamic>;
@@ -136,14 +153,14 @@ class SessionController {
     String? refreshToken,
     Map<String, dynamic>? user,
   }) async {
-    if (accessToken != null && accessToken.isNotEmpty) {
-      this.accessToken = accessToken;
-      if (rememberMe) await tokenStore.write(_kAccessToken, accessToken);
+    if (_isValidToken(accessToken)) {
+      this.accessToken = accessToken!.trim();
+      if (rememberMe) await tokenStore.write(_kAccessToken, this.accessToken!);
     }
-    if (refreshToken != null && refreshToken.isNotEmpty) {
-      this.refreshToken = refreshToken;
+    if (_isValidToken(refreshToken)) {
+      this.refreshToken = refreshToken!.trim();
       if (rememberMe) {
-        await tokenStore.write(_kRefreshToken, refreshToken);
+        await tokenStore.write(_kRefreshToken, this.refreshToken!);
       }
     }
     if (user != null) {
@@ -193,6 +210,7 @@ class SessionController {
   Future<void> clear() async {
     accessToken = null;
     refreshToken = null;
+    onboardingToken = null;
     user = null;
     try {
       await tokenStore.delete(_kAccessToken);

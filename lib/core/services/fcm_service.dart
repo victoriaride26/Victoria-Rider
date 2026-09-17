@@ -83,7 +83,12 @@ class FcmService {
   /// Sends the device FCM token to the backend.
   Future<void> registerTokenWithBackend(String token) async {
     final authToken = SessionController.instance.accessToken;
-    if (authToken == null || authToken.isEmpty) return;
+    if (authToken == null ||
+        authToken.isEmpty ||
+        authToken == 'null' ||
+        authToken == 'undefined') {
+      return;
+    }
 
     try {
       await http.post(

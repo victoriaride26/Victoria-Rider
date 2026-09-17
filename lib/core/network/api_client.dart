@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:meta/meta.dart';
 
 import '../config/api_config.dart';
 import '../services/session_controller.dart';
@@ -70,11 +70,64 @@ class ApiClient {
         'Accept': 'application/json',
       };
 
-  Map<String, String> _authorizedHeaders() {
-    final token = SessionController.instance.accessToken;
+  /// Returns true only if [token] is non-null, non-empty, and does not contain
+  /// literal placeholders like 'null' or 'undefined'.
+  static bool isValidToken(String? token) {
+    if (token == null) return false;
+    final trimmed = token.trim();
+    if (trimmed.isEmpty) return false;
+    final lower = trimmed.toLowerCase();
+    return lower != 'null' &&
+        lower != 'undefined' &&
+        lower != 'bearer null' &&
+        lower != 'bearer undefined' &&
+        lower != 'bearer';
+  }
+
+  /// Identifies unauthenticated auth endpoints where session bearer tokens
+  /// must NOT be automatically attached.
+  static bool _isPublicAuthUrl(String? url) {
+    if (url == null) return false;
+    final uri = Uri.tryParse(url);
+    final path = uri != null ? uri.path : url;
+    return path.endsWith('/auth/register') ||
+        path.endsWith('/auth/login') ||
+        path.endsWith('/auth/social-login') ||
+        path.endsWith('/auth/forgot-password') ||
+        path.endsWith('/auth/reset-password') ||
+        path.endsWith('/auth/verify-email') ||
+        path.endsWith('/auth/email/send-otp') ||
+        path.endsWith('/auth/phone/send-otp') ||
+        path.endsWith('/auth/phone/verify-otp');
+  }
+
+  Map<String, String> _authorizedHeaders({
+    String? url,
+    String? token,
+    Map<String, String>? extraHeaders,
+  }) {
+    // If a specific token was passed (e.g. an onboardingToken), use it if valid.
+    // Otherwise, if the endpoint is not a public auth route, use the session token.
+    String? effectiveToken;
+    if (isValidToken(token)) {
+      effectiveToken = token!.trim();
+    } else if (token == null && !_isPublicAuthUrl(url)) {
+      final sessionToken = SessionController.instance.accessToken;
+      if (isValidToken(sessionToken)) {
+        effectiveToken = sessionToken!.trim();
+      }
+    }
+
+    if (effectiveToken != null &&
+        effectiveToken.toLowerCase().startsWith('bearer ')) {
+      effectiveToken = effectiveToken.substring(7).trim();
+    }
+
     return {
       ..._headers,
-      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      ...?extraHeaders,
+      if (effectiveToken != null && effectiveToken.isNotEmpty)
+        'Authorization': 'Bearer $effectiveToken',
     };
   }
 
@@ -142,7 +195,12 @@ class ApiClient {
     return response;
   }
 
-  Future<dynamic> get(String url, {Map<String, String>? query}) async {
+  Future<dynamic> get(
+    String url, {
+    Map<String, String>? query,
+    Map<String, String>? headers,
+    String? token,
+  }) async {
     try {
       return _handle(
         await _run(
@@ -152,7 +210,11 @@ class ApiClient {
                   queryParameters:
                       (query == null || query.isEmpty) ? null : query,
                 ),
-                headers: _authorizedHeaders(),
+                headers: _authorizedHeaders(
+                  url: url,
+                  token: token,
+                  extraHeaders: headers,
+                ),
               )
               .timeout(_timeout),
         ),
@@ -162,15 +224,30 @@ class ApiClient {
     }
   }
 
-  Future<dynamic> post(String url, {Object? body}) async {
+  Future<dynamic> post(
+    String url, {
+    Object? body,
+    Map<String, String>? headers,
+    String? token,
+  }) async {
+    final requestHeaders = _authorizedHeaders(
+      url: url,
+      token: token,
+      extraHeaders: headers,
+    );
+    final encodedBody = body == null ? null : jsonEncode(body);
+    debugPrint('[ApiClient] POST $url');
+    debugPrint('[ApiClient] Headers: $requestHeaders');
+    if (encodedBody != null) debugPrint('[ApiClient] Body: $encodedBody');
+
     try {
       return _handle(
         await _run(
           () => _http
               .post(
                 Uri.parse(url),
-                headers: _authorizedHeaders(),
-                body: body == null ? null : jsonEncode(body),
+                headers: requestHeaders,
+                body: encodedBody,
               )
               .timeout(_timeout),
         ),
@@ -180,14 +257,23 @@ class ApiClient {
     }
   }
 
-  Future<dynamic> patch(String url, {Object? body}) async {
+  Future<dynamic> patch(
+    String url, {
+    Object? body,
+    Map<String, String>? headers,
+    String? token,
+  }) async {
     try {
       return _handle(
         await _run(
           () => _http
               .patch(
                 Uri.parse(url),
-                headers: _authorizedHeaders(),
+                headers: _authorizedHeaders(
+                  url: url,
+                  token: token,
+                  extraHeaders: headers,
+                ),
                 body: body == null ? null : jsonEncode(body),
               )
               .timeout(_timeout),
@@ -212,6 +298,8 @@ class ApiClient {
     Map<String, MultipartPart> parts = const {},
     String contentType = 'application/octet-stream',
     String method = 'POST',
+    Map<String, String>? headers,
+    String? token,
   }) async {
     http.MultipartRequest buildRequest() {
       final request = http.MultipartRequest(method, Uri.parse(url))
@@ -237,7 +325,9 @@ class ApiClient {
           ),
         );
       }
-      request.headers.addAll(_authorizedHeaders());
+      request.headers.addAll(
+        _authorizedHeaders(url: url, token: token, extraHeaders: headers),
+      );
       return request;
     }
 
@@ -266,6 +356,12 @@ class ApiClient {
       }
     }
     if (!ok) {
+      // Always dump the full raw server response so nothing is hidden.
+      debugPrint('══════════════════════════════════════════════');
+      debugPrint('[ApiClient] ERROR $code ${response.request?.url}');
+      debugPrint('[ApiClient] Raw body: ${response.body}');
+      debugPrint('══════════════════════════════════════════════');
+
       if (body is Map<String, dynamic>) {
         final message = body['message'] ?? body['error'];
         throw ApiException(
@@ -285,6 +381,7 @@ class ApiClient {
     }
     return body;
   }
+
 
   void dispose() => _http.close();
 }

@@ -15,6 +15,7 @@ class OtpVerificationScreen extends StatefulWidget {
     super.key,
     required this.phone,
     this.countryCode = '+234',
+    this.onboardingToken,
   });
 
   /// The full phone number (country code + digits) submitted for verification.
@@ -22,6 +23,9 @@ class OtpVerificationScreen extends StatefulWidget {
 
   /// Display prefix shown alongside the masked number.
   final String countryCode;
+
+  /// Optional onboarding token carried through from social login.
+  final String? onboardingToken;
 
   @override
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
@@ -91,8 +95,11 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       _error = null;
     });
     try {
-      await AuthRepository.instance
-          .verifyPhoneOtp(phone: widget.phone, otp: _otp);
+      await AuthRepository.instance.verifyPhoneOtp(
+        phone: widget.phone,
+        otp: _otp,
+        onboardingToken: widget.onboardingToken,
+      );
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
@@ -101,7 +108,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.message;
+        _error = e.isServerError
+            ? 'Server is temporarily busy. Please tap to try again.'
+            : e.message;
         _loading = false;
       });
     } catch (_) {
@@ -120,7 +129,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       _error = null;
     });
     try {
-      final otp = await AuthRepository.instance.sendPhoneOtp(widget.phone);
+      final otp = await AuthRepository.instance.sendPhoneOtp(
+        widget.phone,
+        onboardingToken: widget.onboardingToken,
+      );
       if (!mounted) return;
       setState(() {
         _seconds = 45;
@@ -131,7 +143,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.message;
+        _error = e.isServerError
+            ? 'Server is temporarily busy. Please tap to try again.'
+            : e.message;
         _sendingOtp = false;
       });
     } catch (_) {

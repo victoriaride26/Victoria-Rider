@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_primary_button.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../rider/presentation/screens/rider_home_shell.dart';
 import '../../data/auth_repository.dart';
+import 'phone_login_screen.dart';
 
 /// R-06 — Rider Login: sign in after completing the profile form.
 class LoginScreen extends StatefulWidget {
@@ -109,7 +110,13 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       if (result.requiresPhoneVerification) {
         setState(() => _socialLoading = null);
-        _showMessage('Verify your phone number to finish signing up.');
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => PhoneLoginScreen(
+              onboardingToken: result.onboardingToken,
+            ),
+          ),
+        );
         return;
       }
       AppRouter.pushAndClearStack(context, const RiderHomeShell());

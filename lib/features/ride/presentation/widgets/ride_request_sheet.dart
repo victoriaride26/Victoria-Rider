@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../../core/network/api_client.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/mapbox_geocoding_service.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -66,27 +67,29 @@ class _RideRequestSheetState extends State<RideRequestSheet>
   String _selectedVehicle = 'standard';
   String _selectedPayment = 'cash';
   bool _requesting = false;
+  String? _requestError;
 
   static const _vehicles = [
     _VehicleOption('standard', Icons.directions_car, 'VT Standard',
         'Comfortable everyday ride'),
-    _VehicleOption('comfort', Icons.airline_seat_recline_extra, 'VT Comfort',
+    _VehicleOption('premium', Icons.airline_seat_recline_extra, 'VT Premium',
         'Premium, quieter ride'),
-    _VehicleOption('xl', Icons.airport_shuttle, 'VT XL', 'Up to 6 passengers'),
+    _VehicleOption('bike', Icons.two_wheeler, 'VT Bike',
+        'Quick, affordable motorbike'),
   ];
 
+  /// Payment channels available on the request screen.
   static const _payments = [
     _PayOption('cash', Icons.payments_outlined, 'Cash'),
     _PayOption('wallet', Icons.account_balance_wallet_outlined, 'Wallet'),
-    _PayOption('card', Icons.credit_card, 'Card'),
+    _PayOption('card', Icons.credit_card_outlined, 'Card'),
+    _PayOption('transfer', Icons.swap_horiz_rounded, 'Transfer'),
   ];
 
-  /// Multipliers for each vehicle tier relative to Standard per backend pricing rules.
+  /// Fare multipliers per vehicle tier (mirrors backend pricing rules).
   static const _fareMultipliers = {
     'standard': 1.0,
-    'comfort': 1.5,
     'premium': 1.5,
-    'xl': 1.5,
     'bike': 0.5,
   };
 
@@ -149,38 +152,44 @@ class _RideRequestSheetState extends State<RideRequestSheet>
         return;
       }
       // Permission is granted but we don't yet have a fix — get it now.
-      setState(() => _requesting = true);
+      setState(() {
+        _requesting = true;
+        _requestError = null;
+      });
       final fresh = await _locationService.getCurrentLocation();
       if (!mounted) return;
       if (fresh == null) {
-        setState(() => _requesting = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not get your location. Please try again.'),
-            behavior: SnackBarBehavior.floating,
-          ),
+        // Fall back gracefully to estimate's pickup point rather than stalling with invisible error
+        final fallback = CurrentLocation(
+          position: _estimate!.pickupLatLng,
+          label: _estimate!.pickupLabel,
+          shortLabel: _estimate!.pickupLabel,
         );
-        return;
-      }
-      // Re-estimate with the freshly resolved pickup position.
-      setState(() {
-        _confirmedLocation = fresh;
-        _requesting = false;
-        _loading = true;
-      });
-      try {
-        final est = await _service.estimate(
-          pickup: fresh.position,
-          pickupLabel: fresh.shortLabel,
-          destination: widget.destination.location,
-          destinationLabel: widget.destination.shortName,
-          vehicleType: _selectedVehicle,
-        );
-        if (mounted) setState(() => _estimate = est);
-      } catch (_) {
-        // Keep the existing estimate if re-estimation fails.
-      } finally {
-        if (mounted) setState(() => _loading = false);
+        setState(() {
+          _confirmedLocation = fallback;
+          _requesting = false;
+        });
+      } else {
+        // Re-estimate with the freshly resolved pickup position.
+        setState(() {
+          _confirmedLocation = fresh;
+          _requesting = false;
+          _loading = true;
+        });
+        try {
+          final est = await _service.estimate(
+            pickup: fresh.position,
+            pickupLabel: fresh.shortLabel,
+            destination: widget.destination.location,
+            destinationLabel: widget.destination.shortName,
+            vehicleType: _selectedVehicle,
+          );
+          if (mounted) setState(() => _estimate = est);
+        } catch (_) {
+          // Keep the existing estimate if re-estimation fails.
+        } finally {
+          if (mounted) setState(() => _loading = false);
+        }
       }
       // Re-trigger confirm now that we have a location.
       await _confirm();
@@ -188,7 +197,11 @@ class _RideRequestSheetState extends State<RideRequestSheet>
     }
     // ── End location gate ────────────────────────────────────────────────
 
-    setState(() => _requesting = true);
+    setState(() {
+      _requesting = true;
+      _requestError = null;
+    });
+
     try {
       final rideId = await _service.requestRide(
         estimate: _estimate!,
@@ -197,23 +210,41 @@ class _RideRequestSheetState extends State<RideRequestSheet>
       );
 
       if (!mounted) return;
-      Navigator.of(context).pop();
-      await Navigator.of(context).push(
+      final navigator = Navigator.of(context);
+      navigator.pop();
+      await navigator.push(
         MaterialPageRoute<void>(
-          builder: (_) => SearchingForDriverScreen(rideId: rideId),
+          builder: (_) => SearchingForDriverScreen(
+            rideId: rideId,
+            pickupLatLng: _estimate?.pickupLatLng,
+            destinationLatLng: _estimate?.destinationLatLng,
+            pickupLabel: _estimate?.pickupLabel,
+            destinationLabel: _estimate?.destinationLabel,
+            fareNgn: _estimate?.fareNgn,
+          ),
         ),
       );
-    } catch (_) {
+    } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to request ride. Please try again.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        setState(() {
+          _requestError = e.message;
+          _requesting = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        final rawMsg = e.toString().replaceFirst('Exception: ', '');
+        setState(() {
+          _requestError = rawMsg.isNotEmpty
+              ? rawMsg
+              : 'Failed to request ride. Please try again.';
+          _requesting = false;
+        });
       }
     } finally {
-      if (mounted) setState(() => _requesting = false);
+      if (mounted && _requesting) {
+        setState(() => _requesting = false);
+      }
     }
   }
 
@@ -570,59 +601,72 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    children: List.generate(_payments.length, (i) {
-                      final p = _payments[i];
-                      final isSelected = _selectedPayment == p.id;
-                      return Expanded(
-                        child: GestureDetector(
-                          onTap: () =>
-                              setState(() => _selectedPayment = p.id),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            margin: EdgeInsets.only(
-                                right: i < _payments.length - 1 ? 10 : 0),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? AppColors.primary.withValues(alpha: 0.08)
-                                  : AppColors.surfaceContainerLow,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected
-                                    ? AppColors.primary
-                                    : AppColors.surfaceContainerHigh,
-                                width: isSelected ? 1.5 : 1,
-                              ),
-                            ),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  p.icon,
-                                  color: isSelected
-                                      ? AppColors.primary
-                                      : AppColors.onSurfaceVariant,
-                                  size: 22,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  p.label,
-                                  style: theme.textTheme.labelMedium?.copyWith(
-                                    color: isSelected
-                                        ? AppColors.primary
-                                        : AppColors.onSurfaceVariant,
-                                    fontWeight: isSelected
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
+                  // 2-column grid for payment options
+                  Column(
+                    children: [
+                      for (int row = 0; row < 2; row++)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: row == 0 ? 10 : 0),
+                          child: Row(
+                            children: List.generate(2, (col) {
+                              final i = row * 2 + col;
+                              final p = _payments[i];
+                              final isSelected = _selectedPayment == p.id;
+                              return Expanded(
+                                child: GestureDetector(
+                                  onTap: () =>
+                                      setState(() => _selectedPayment = p.id),
+                                  child: AnimatedContainer(
+                                    duration:
+                                        const Duration(milliseconds: 180),
+                                    margin: EdgeInsets.only(
+                                        right: col == 0 ? 10 : 0),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 14),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? AppColors.primary
+                                              .withValues(alpha: 0.08)
+                                          : AppColors.surfaceContainerLow,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? AppColors.primary
+                                            : AppColors.surfaceContainerHigh,
+                                        width: isSelected ? 1.5 : 1,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Icon(
+                                          p.icon,
+                                          color: isSelected
+                                              ? AppColors.primary
+                                              : AppColors.onSurfaceVariant,
+                                          size: 24,
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          p.label,
+                                          style: theme.textTheme.labelMedium
+                                              ?.copyWith(
+                                            color: isSelected
+                                                ? AppColors.primary
+                                                : AppColors.onSurfaceVariant,
+                                            fontWeight: isSelected
+                                                ? FontWeight.w700
+                                                : FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ],
-                            ),
+                              );
+                            }),
                           ),
                         ),
-                      );
-                    }),
+                    ],
                   ),
 
                   const SizedBox(height: 24),
@@ -655,6 +699,48 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                   ),
 
                   const SizedBox(height: 20),
+
+                  // ── Error Banner (Visible In-Sheet Feedback) ─────────────
+                  if (_requestError != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.error.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline_rounded,
+                              color: AppColors.error, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _requestError!,
+                              style: const TextStyle(
+                                color: AppColors.onErrorContainer,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 16),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            color: AppColors.onErrorContainer,
+                            onPressed: () =>
+                                setState(() => _requestError = null),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
 
                   // ── CTA ─────────────────────────────────────────────────
                   SizedBox(

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/services/rider_socket_service.dart';
 import '../../../../core/theme/app_theme.dart';
 
@@ -30,7 +32,8 @@ class InRideChatSheet extends StatefulWidget {
   State<InRideChatSheet> createState() => _InRideChatSheetState();
 }
 
-class _InRideChatSheetState extends State<InRideChatSheet> {
+class _InRideChatSheetState extends State<InRideChatSheet>
+    with WidgetsBindingObserver {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<_ChatMessage> _messages = [];
@@ -39,15 +42,28 @@ class _InRideChatSheetState extends State<InRideChatSheet> {
   @override
   void initState() {
     super.initState();
-    // Ensure socket is joined to this ride room
-    RiderSocketService.instance.joinRideRoom(widget.rideId);
+    WidgetsBinding.instance.addObserver(this);
 
+    // Ensure socket is joined to this ride room
+    RiderSocketService.instance.subscribeToRideTracking(widget.rideId);
+
+    // Restore chat history from backend on open
+    _loadChatHistory();
+
+    // Listen to real-time incoming messages
     _chatSub = RiderSocketService.instance.onChatMessage.listen((data) {
       final msgRideId = data['rideId']?.toString();
       if (msgRideId == null || msgRideId == widget.rideId) {
         final text = (data['message'] ?? data['text'])?.toString();
         final sender = data['sender']?.toString() ?? 'driver';
         if (text != null && text.isNotEmpty) {
+          // Avoid duplicate local echoes
+          if (sender == 'rider' &&
+              _messages.isNotEmpty &&
+              _messages.last.isMe &&
+              _messages.last.text == text) {
+            return;
+          }
           setState(() {
             _messages.add(_ChatMessage(
               text: text,
@@ -59,6 +75,66 @@ class _InRideChatSheetState extends State<InRideChatSheet> {
         }
       }
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // When the app resumes from the background, restore the UI chat history
+    if (state == AppLifecycleState.resumed) {
+      _loadChatHistory();
+    }
+  }
+
+  Future<void> _loadChatHistory() async {
+    try {
+      final response =
+          await ApiClient.instance.get(ApiConfig.rideChat(widget.rideId));
+      if (!mounted) return;
+
+      dynamic listRaw;
+      if (response is Map<String, dynamic>) {
+        listRaw = response['data'] ??
+            response['messages'] ??
+            response['chat'] ??
+            response['history'];
+      } else if (response is List) {
+        listRaw = response;
+      }
+
+      if (listRaw is List && listRaw.isNotEmpty) {
+        final loaded = <_ChatMessage>[];
+        for (final item in listRaw) {
+          if (item is Map) {
+            final text = (item['message'] ?? item['text'])?.toString();
+            final sender = item['sender']?.toString() ?? 'driver';
+            DateTime time = DateTime.now();
+            if (item['timestamp'] is int) {
+              time = DateTime.fromMillisecondsSinceEpoch(item['timestamp'] as int);
+            } else if (item['createdAt'] is String) {
+              time =
+                  DateTime.tryParse(item['createdAt'] as String) ?? DateTime.now();
+            }
+            if (text != null && text.isNotEmpty) {
+              loaded.add(_ChatMessage(
+                text: text,
+                isMe: sender == 'rider',
+                time: time,
+              ));
+            }
+          }
+        }
+        if (loaded.isNotEmpty && mounted) {
+          setState(() {
+            _messages
+              ..clear()
+              ..addAll(loaded);
+          });
+          _scrollToBottom();
+        }
+      }
+    } catch (_) {
+      // Quietly continue if offline or not implemented on server yet
+    }
   }
 
   void _scrollToBottom() {
@@ -96,6 +172,7 @@ class _InRideChatSheetState extends State<InRideChatSheet> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _chatSub?.cancel();
     _controller.dispose();
     _scrollController.dispose();

@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart';
 
 import '../../../../core/config/api_config.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/services/rider_socket_service.dart';
-import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
@@ -18,6 +17,11 @@ class SearchingForDriverScreen extends StatefulWidget {
     super.key,
     this.rideId,
     this.enableRealtime = true,
+    this.pickupLatLng,
+    this.destinationLatLng,
+    this.pickupLabel,
+    this.destinationLabel,
+    this.fareNgn,
   });
 
   /// The ride ID returned by the backend after creating the ride.
@@ -27,6 +31,12 @@ class SearchingForDriverScreen extends StatefulWidget {
   /// Defaults to true; set to false in isolated widget tests.
   final bool enableRealtime;
 
+  final LatLng? pickupLatLng;
+  final LatLng? destinationLatLng;
+  final String? pickupLabel;
+  final String? destinationLabel;
+  final double? fareNgn;
+
   @override
   State<SearchingForDriverScreen> createState() =>
       _SearchingForDriverScreenState();
@@ -35,6 +45,7 @@ class SearchingForDriverScreen extends StatefulWidget {
 class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
   final RiderSocketService _socket = RiderSocketService.instance;
   StreamSubscription<Map<String, dynamic>>? _acceptedSub;
+  StreamSubscription<Map<String, dynamic>>? _stateSub;
   Timer? _pollTimer;
   bool _navigated = false;
 
@@ -49,13 +60,23 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
   void _initListeners() {
     _socket.connect();
     if (widget.rideId != null && widget.rideId!.isNotEmpty) {
-      _socket.joinRideRoom(widget.rideId!);
+      _socket.subscribeToRideTracking(widget.rideId!);
 
-      // 1. Socket event listener for instant push
+      // 1. Socket event listener for instant push (ride:state MATCHED or ride:accepted)
       _acceptedSub = _socket.onRideAccepted.listen((data) {
         final incomingId = (data['rideId'] ?? data['id'])?.toString();
         if (incomingId == null || incomingId == widget.rideId) {
           _handleRideAccepted(data);
+        }
+      });
+
+      _stateSub = _socket.onRideState.listen((data) {
+        final status = (data['status'] ?? data['state'])?.toString().toUpperCase();
+        if (status == 'MATCHED' || status == 'ACCEPTED') {
+          final incomingId = (data['rideId'] ?? data['id'])?.toString();
+          if (incomingId == null || incomingId == widget.rideId) {
+            _handleRideAccepted(data);
+          }
         }
       });
 
@@ -69,25 +90,16 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
   Future<void> _checkRideStatus() async {
     if (_navigated || widget.rideId == null) return;
     try {
-      final token = SessionController.instance.accessToken;
-      final res = await http.get(
-        Uri.parse(ApiConfig.rideStatus(widget.rideId!)),
-        headers: {
-          'Accept': 'application/json',
-          if (token != null && token.isNotEmpty)
-            'Authorization': 'Bearer $token',
-        },
-      ).timeout(const Duration(seconds: 3));
-
-      if (res.statusCode == 200) {
-        final decoded = jsonDecode(res.body) as Map<String, dynamic>?;
-        final data = decoded?['data'] as Map<String, dynamic>? ?? decoded;
-        final status = data?['status']?.toString().toUpperCase();
-        if (status == 'ACCEPTED' ||
-            status == 'ARRIVED' ||
-            status == 'IN_PROGRESS') {
-          _handleRideAccepted(data ?? {});
-        }
+      final response = await ApiClient.instance
+          .get(ApiConfig.rideStatus(widget.rideId!));
+      final decoded = response as Map<String, dynamic>?;
+      final data = decoded?['data'] as Map<String, dynamic>? ?? decoded;
+      final status = (data?['status'] ?? data?['state'])?.toString().toUpperCase();
+      if (status == 'MATCHED' ||
+          status == 'ACCEPTED' ||
+          status == 'ARRIVED' ||
+          status == 'IN_PROGRESS') {
+        _handleRideAccepted(data ?? {});
       }
     } catch (_) {}
   }
@@ -97,17 +109,41 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
     _navigated = true;
     _pollTimer?.cancel();
     _acceptedSub?.cancel();
+    _stateSub?.cancel();
 
     final driver = data['driver'] is Map ? data['driver'] as Map : null;
     final vehicle =
         driver?['vehicle'] is Map ? driver!['vehicle'] as Map : null;
+    final driverUser =
+        driver?['user'] is Map ? driver!['user'] as Map : null;
+
+    final driverName = driver?['name']?.toString() ??
+        driver?['fullName']?.toString() ??
+        (driverUser?['firstName'] != null
+            ? '${driverUser!['firstName']} ${driverUser['lastName'] ?? ''}'.trim()
+            : data['driverName']?.toString());
+
+    final driverPhone = driver?['phone']?.toString() ??
+        driver?['phoneNumber']?.toString() ??
+        driverUser?['phone']?.toString() ??
+        data['driverPhone']?.toString();
+
+    LatLng? driverLocation;
+    final loc = driver?['location'] ?? driver?['coords'] ?? data['driverLocation'];
+    if (loc is Map) {
+      final lat = (loc['latitude'] ?? loc['lat']) as num?;
+      final lng = (loc['longitude'] ?? loc['lng']) as num?;
+      if (lat != null && lng != null) {
+        driverLocation = LatLng(lat.toDouble(), lng.toDouble());
+      }
+    }
 
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => DriverAssignedScreen(
           rideId: widget.rideId,
-          driverName:
-              driver?['name']?.toString() ?? data['driverName']?.toString(),
+          driverName: driverName,
+          driverPhone: driverPhone,
           driverRating: (driver?['rating'] ?? data['driverRating']) is num
               ? (driver?['rating'] ?? data['driverRating']).toDouble()
               : null,
@@ -119,6 +155,12 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
           etaMinutes: (data['etaMinutes'] ?? driver?['etaMinutes']) is num
               ? (data['etaMinutes'] ?? driver?['etaMinutes']).toInt()
               : null,
+          pickupLatLng: widget.pickupLatLng,
+          destinationLatLng: widget.destinationLatLng,
+          pickupLabel: widget.pickupLabel,
+          destinationLabel: widget.destinationLabel,
+          fareNgn: widget.fareNgn,
+          initialDriverLocation: driverLocation,
         ),
       ),
     );
@@ -127,20 +169,13 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
   Future<void> _cancelRide() async {
     _pollTimer?.cancel();
     _acceptedSub?.cancel();
+    _stateSub?.cancel();
     if (widget.rideId != null && widget.rideId!.isNotEmpty) {
       try {
-        final token = SessionController.instance.accessToken;
-        await http
-            .post(
-              Uri.parse(ApiConfig.rideCancel(widget.rideId!)),
-              headers: {
-                'Content-Type': 'application/json',
-                if (token != null && token.isNotEmpty)
-                  'Authorization': 'Bearer $token',
-              },
-              body: jsonEncode({'reason': 'Cancelled by rider'}),
-            )
-            .timeout(const Duration(seconds: 4));
+        await ApiClient.instance.post(
+          ApiConfig.rideCancel(widget.rideId!),
+          body: {'reason': 'Cancelled by rider'},
+        );
       } catch (_) {}
     }
     if (mounted) Navigator.of(context).pop();
@@ -150,6 +185,7 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
   void dispose() {
     _pollTimer?.cancel();
     _acceptedSub?.cancel();
+    _stateSub?.cancel();
     if (widget.enableRealtime) {
       _socket.disconnect();
     }
@@ -179,63 +215,37 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
                     color: AppColors.primaryContainer,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.directions_car,
-                      size: 48, color: AppColors.onPrimaryContainer),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 52,
+                      height: 52,
+                      child: CircularProgressIndicator(
+                        color: AppColors.primary,
+                        strokeWidth: 3,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 24),
-                Text('Finding your Victoria driver nearby...',
-                    style: theme.textTheme.headlineMedium,
-                    textAlign: TextAlign.center),
+                Text(
+                  'Finding your Victoria driver nearby...',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium,
+                ),
                 const SizedBox(height: 8),
                 Text(
-                  'Matching with the best route for your premium journey.',
-                  style: theme.textTheme.bodyLarge
-                      ?.copyWith(color: AppColors.onSurfaceVariant),
+                  'Notifying the closest drivers within 10km. Please hold on.',
                   textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: AppColors.onSurfaceVariant),
                 ),
-                const SizedBox(height: 24),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2.5, color: AppColors.primary),
-                      ),
-                      const SizedBox(width: 12),
-                      Flexible(
-                        child: Text(
-                          'Live Search',
-                          style: theme.textTheme.titleLarge,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text('Est. 2 mins',
-                          style: theme.textTheme.labelMedium
-                              ?.copyWith(color: AppColors.onSurfaceVariant)),
-                    ],
-                  ),
+                const SizedBox(height: 32),
+                AppPrimaryButton(
+                  label: 'Cancel Request',
+                  onPressed: _cancelRide,
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-          child: AppPrimaryButton(
-            label: 'Cancel Request',
-            onPressed: _cancelRide,
           ),
         ),
       ),
