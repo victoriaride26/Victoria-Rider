@@ -4,24 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import '../config/mapbox_config.dart';
-
-/// A single geocoding result from the Mapbox Geocoding API.
-class GeocodingResult {
-  const GeocodingResult({
-    required this.placeName,
-    required this.shortName,
-    required this.location,
-  });
-
-  /// Full formatted place name (e.g. "Wurukum Market, Makurdi, Benue, Nigeria").
-  final String placeName;
-
-  /// Short display name — the first segment before the first comma.
-  final String shortName;
-
-  /// Geographic coordinates.
-  final LatLng location;
-}
+import '../models/geocoding_result.dart';
 
 /// Thin client for the Mapbox Geocoding API (v5).
 ///

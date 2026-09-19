@@ -24,6 +24,7 @@ class RideInProgressScreen extends StatefulWidget {
     this.driverPhone,
     this.vehicleModel,
     this.plateNumber,
+    this.driverProfileImage,
     this.fareNgn,
     this.pickupLatLng,
     this.destinationLatLng,
@@ -35,6 +36,7 @@ class RideInProgressScreen extends StatefulWidget {
   final String? driverPhone;
   final String? vehicleModel;
   final String? plateNumber;
+  final String? driverProfileImage;
   final double? fareNgn;
   final LatLng? pickupLatLng;
   final LatLng? destinationLatLng;
@@ -211,12 +213,12 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final name = widget.driverName ?? 'Terwase O.';
+    final name = widget.driverName ?? 'Driver';
     final carInfo =
-        '${widget.vehicleModel ?? 'Toyota Corolla'} • ${widget.plateNumber ?? 'ABC-123-XY'}';
+        '${widget.vehicleModel ?? 'Vehicle'} • ${widget.plateNumber ?? 'Plate Info'}';
     final fareStr = widget.fareNgn != null
         ? '₦${widget.fareNgn!.toStringAsFixed(0)}'
-        : '₦3,450.00';
+        : 'Calculating...';
 
     final markers = <Marker>[
       // Destination marker
@@ -332,12 +334,18 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        const CircleAvatar(
-                          radius: 22,
-                          backgroundColor: AppColors.primaryContainer,
-                          child: Icon(Icons.person,
-                              color: AppColors.onPrimaryContainer),
-                        ),
+                        widget.driverProfileImage != null
+                            ? CircleAvatar(
+                                radius: 22,
+                                backgroundImage: NetworkImage(widget.driverProfileImage!),
+                                backgroundColor: AppColors.primaryContainer,
+                              )
+                            : const CircleAvatar(
+                                radius: 22,
+                                backgroundColor: AppColors.primaryContainer,
+                                child: Icon(Icons.person,
+                                    color: AppColors.onPrimaryContainer),
+                              ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(

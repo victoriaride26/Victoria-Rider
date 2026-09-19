@@ -18,11 +18,7 @@ import '../../../ride/presentation/screens/destination_search_screen.dart';
 /// - Recent ride history cards with "Book Again" action
 /// - Victoria Shield safety & security highlight
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({
-    super.key,
-    this.onOpenDrawer,
-    this.onNavigateToTab,
-  });
+  const HomeScreen({super.key, this.onOpenDrawer, this.onNavigateToTab});
 
   /// Triggers opening the persistent drawer on the home shell.
   final VoidCallback? onOpenDrawer;
@@ -34,8 +30,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with WidgetsBindingObserver {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<WalletTransaction> _recentActivity = [];
   final _locationService = LocationService();
   CurrentLocation? _currentLocation;
@@ -94,7 +89,11 @@ class _HomeScreenState extends State<HomeScreen>
   static const List<_SavedPlace> _savedPlaces = [
     _SavedPlace(Icons.home_rounded, 'Home', 'High-Level, Makurdi'),
     _SavedPlace(Icons.work_rounded, 'Work', 'Federal Secretariat, Makurdi'),
-    _SavedPlace(Icons.shopping_bag_outlined, 'Modern Market', 'South-Bank, Makurdi'),
+    _SavedPlace(
+      Icons.shopping_bag_outlined,
+      'Modern Market',
+      'South-Bank, Makurdi',
+    ),
   ];
 
   @override
@@ -126,7 +125,9 @@ class _HomeScreenState extends State<HomeScreen>
                     color: AppColors.surfaceContainerLowest,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: const BorderSide(color: AppColors.surfaceContainerHigh),
+                      side: const BorderSide(
+                        color: AppColors.surfaceContainerHigh,
+                      ),
                     ),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(12),
@@ -139,8 +140,11 @@ class _HomeScreenState extends State<HomeScreen>
                       },
                       child: const Padding(
                         padding: EdgeInsets.all(10),
-                        child: Icon(Icons.menu_rounded,
-                            color: AppColors.onSurface, size: 24),
+                        child: Icon(
+                          Icons.menu_rounded,
+                          color: AppColors.onSurface,
+                          size: 24,
+                        ),
                       ),
                     ),
                   ),
@@ -156,7 +160,8 @@ class _HomeScreenState extends State<HomeScreen>
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                  'GPS location: ${_currentLocation!.shortLabel}'),
+                                'GPS location: ${_currentLocation!.shortLabel}',
+                              ),
                               duration: const Duration(seconds: 2),
                               behavior: SnackBarBehavior.floating,
                             ),
@@ -165,18 +170,24 @@ class _HomeScreenState extends State<HomeScreen>
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.surfaceContainerLowest,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                              color: AppColors.surfaceContainerHigh),
+                            color: AppColors.surfaceContainerHigh,
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.location_on,
-                                color: AppColors.primary, size: 16),
+                            const Icon(
+                              Icons.location_on,
+                              color: AppColors.primary,
+                              size: 16,
+                            ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: _locationLoading
@@ -185,23 +196,29 @@ class _HomeScreenState extends State<HomeScreen>
                                       width: 12,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 1.5,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                            AppColors.primary),
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              AppColors.primary,
+                                            ),
                                       ),
                                     )
                                   : Text(
                                       _currentLocation?.shortLabel ??
                                           'Makurdi, Benue State',
-                                      style: theme.textTheme.labelMedium?.copyWith(
-                                        color: AppColors.onSurface,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(
+                                            color: AppColors.onSurface,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                             ),
-                            const Icon(Icons.keyboard_arrow_down,
-                                size: 16, color: AppColors.onSurfaceVariant),
+                            const Icon(
+                              Icons.keyboard_arrow_down,
+                              size: 16,
+                              color: AppColors.onSurfaceVariant,
+                            ),
                           ],
                         ),
                       ),
@@ -213,7 +230,9 @@ class _HomeScreenState extends State<HomeScreen>
                     color: AppColors.surfaceContainerLowest,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: const BorderSide(color: AppColors.surfaceContainerHigh),
+                      side: const BorderSide(
+                        color: AppColors.surfaceContainerHigh,
+                      ),
                     ),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(12),
@@ -264,7 +283,7 @@ class _HomeScreenState extends State<HomeScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${_getGreeting()}, $displayName 👋',
+                          '${_getGreeting()}, $displayName',
                           style: theme.textTheme.headlineMedium?.copyWith(
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.5,
@@ -303,7 +322,8 @@ class _HomeScreenState extends State<HomeScreen>
                       // Pickup row (tappable to refresh GPS or search custom pickup location)
                       InkWell(
                         borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(16)),
+                          top: Radius.circular(16),
+                        ),
                         onTap: () async {
                           if (_currentLocation == null) {
                             await _loadCurrentLocation();
@@ -312,14 +332,14 @@ class _HomeScreenState extends State<HomeScreen>
                           if (!context.mounted) return;
                           final selected = await Navigator.of(context)
                               .push<CurrentLocation>(
-                            MaterialPageRoute<CurrentLocation>(
-                              builder: (_) => DestinationSearchScreen(
-                                currentLocation: _currentLocation,
-                                initialTarget: SearchTarget.pickup,
-                                isSettingPickup: true,
-                              ),
-                            ),
-                          );
+                                MaterialPageRoute<CurrentLocation>(
+                                  builder: (_) => DestinationSearchScreen(
+                                    currentLocation: _currentLocation,
+                                    initialTarget: SearchTarget.pickup,
+                                    isSettingPickup: true,
+                                  ),
+                                ),
+                              );
                           if (selected != null && mounted) {
                             setState(() => _currentLocation = selected);
                           }
@@ -348,7 +368,8 @@ class _HomeScreenState extends State<HomeScreen>
                                               strokeWidth: 1.5,
                                               valueColor:
                                                   AlwaysStoppedAnimation<Color>(
-                                                      AppColors.primary),
+                                                    AppColors.primary,
+                                                  ),
                                             ),
                                           ),
                                           const SizedBox(width: 8),
@@ -356,9 +377,10 @@ class _HomeScreenState extends State<HomeScreen>
                                             'Getting location…',
                                             style: theme.textTheme.bodyMedium
                                                 ?.copyWith(
-                                              color: AppColors.onSurfaceVariant,
-                                              fontWeight: FontWeight.w500,
-                                            ),
+                                                  color: AppColors
+                                                      .onSurfaceVariant,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
                                           ),
                                         ],
                                       )
@@ -366,23 +388,26 @@ class _HomeScreenState extends State<HomeScreen>
                                         _currentLocation != null
                                             ? 'Pickup: ${_currentLocation!.shortLabel}'
                                             : 'Pickup: Tap to set location',
-                                        style:
-                                            theme.textTheme.bodyMedium?.copyWith(
-                                          color: _currentLocation != null
-                                              ? AppColors.onSurface
-                                              : AppColors.primary,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                              color: _currentLocation != null
+                                                  ? AppColors.onSurface
+                                                  : AppColors.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                               ),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary
-                                      .withValues(alpha: 0.1),
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.1,
+                                  ),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
@@ -427,17 +452,18 @@ class _HomeScreenState extends State<HomeScreen>
                       // Destination row (tappable to start ride search)
                       InkWell(
                         borderRadius: const BorderRadius.vertical(
-                            bottom: Radius.circular(16)),
+                          bottom: Radius.circular(16),
+                        ),
                         onTap: () async {
                           final updatedPickup = await Navigator.of(context)
                               .push<CurrentLocation>(
-                            MaterialPageRoute<CurrentLocation>(
-                              builder: (_) => DestinationSearchScreen(
-                                currentLocation: _currentLocation,
-                                initialTarget: SearchTarget.destination,
-                              ),
-                            ),
-                          );
+                                MaterialPageRoute<CurrentLocation>(
+                                  builder: (_) => DestinationSearchScreen(
+                                    currentLocation: _currentLocation,
+                                    initialTarget: SearchTarget.destination,
+                                  ),
+                                ),
+                              );
                           if (updatedPickup != null && mounted) {
                             setState(() => _currentLocation = updatedPickup);
                           }
@@ -524,7 +550,9 @@ class _HomeScreenState extends State<HomeScreen>
                     subtitle: 'Fast delivery',
                     onTap: () => ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Courier delivery service launching soon!'),
+                        content: Text(
+                          'Courier delivery service launching soon!',
+                        ),
                         behavior: SnackBarBehavior.floating,
                       ),
                     ),
@@ -557,8 +585,13 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                     icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Add Place',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    label: const Text(
+                      'Add Place',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -577,7 +610,8 @@ class _HomeScreenState extends State<HomeScreen>
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                         side: const BorderSide(
-                            color: AppColors.surfaceContainerHigh),
+                          color: AppColors.surfaceContainerHigh,
+                        ),
                       ),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(14),
@@ -600,21 +634,26 @@ class _HomeScreenState extends State<HomeScreen>
                                   Container(
                                     padding: const EdgeInsets.all(6),
                                     decoration: BoxDecoration(
-                                      color: AppColors.primary
-                                          .withValues(alpha: 0.1),
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.1,
+                                      ),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: Icon(place.icon,
-                                        color: AppColors.primary, size: 18),
+                                    child: Icon(
+                                      place.icon,
+                                      color: AppColors.primary,
+                                      size: 18,
+                                    ),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       place.label,
-                                      style: theme.textTheme.labelLarge?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 14,
-                                      ),
+                                      style: theme.textTheme.labelLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14,
+                                          ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -659,8 +698,10 @@ class _HomeScreenState extends State<HomeScreen>
                         widget.onNavigateToTab!(1); // Ride history tab
                       }
                     },
-                    child: const Text('View All',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    child: const Text(
+                      'View All',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ],
               ),
@@ -742,7 +783,8 @@ class _HomeScreenState extends State<HomeScreen>
                                   MaterialPageRoute<void>(
                                     builder: (_) =>
                                         const DestinationSearchScreen(
-                                    currentLocation: null),
+                                          currentLocation: null,
+                                        ),
                                   ),
                                 ),
                                 child: const Text(
@@ -762,7 +804,9 @@ class _HomeScreenState extends State<HomeScreen>
               ] else ...[
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 24),
+                    horizontal: 20,
+                    vertical: 24,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.surfaceContainerLowest,
                     borderRadius: BorderRadius.circular(14),
@@ -805,7 +849,9 @@ class _HomeScreenState extends State<HomeScreen>
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 18, vertical: 10),
+                            horizontal: 18,
+                            vertical: 10,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),

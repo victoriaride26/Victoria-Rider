@@ -51,13 +51,7 @@ class RideRequestService {
     _directions.dispose();
   }
 
-  // Local fare constants (fallback only)
-
-  /// Base fare in Naira used when the backend estimate is unavailable.
-  static const double _baseFareNgn = 500;
-
-  /// Per-km rate in Naira used when the backend estimate is unavailable.
-  static const double _perKmNgn = 150;
+  // Local fare constants removed (backend only now)
 
   // Enum normalisers
 
@@ -101,103 +95,92 @@ class RideRequestService {
     String vehicleType = 'standard',
   }) async {
     // 1 - Backend estimate
-    try {
-      final response = await ApiClient.instance.post(
-        ApiConfig.rideEstimate,
-        body: {
-          'pickupLatitude': pickup.latitude,
-          'pickupLongitude': pickup.longitude,
-          'dropoffLatitude': destination.latitude,
-          'dropoffLongitude': destination.longitude,
-          'vehicleType': normalizeVehicleType(vehicleType),
+    final response = await ApiClient.instance.post(
+      ApiConfig.rideEstimate,
+      body: {
+        'pickupLatitude': pickup.latitude,
+        'pickupLongitude': pickup.longitude,
+        'dropoffLatitude': destination.latitude,
+        'dropoffLongitude': destination.longitude,
+        'pickupLocation': {
+          'lat': pickup.latitude,
+          'lng': pickup.longitude,
+          'address': pickupLabel,
         },
-      );
+        'dropoffLocation': {
+          'lat': destination.latitude,
+          'lng': destination.longitude,
+          'address': destinationLabel,
+        },
+        'vehicleType': normalizeVehicleType(vehicleType),
+      },
+    );
 
-      if (response is Map<String, dynamic>) {
-        final data = response['data'] as Map<String, dynamic>? ?? response;
-        final fareRaw = data['estimatedFare'] ?? data['fare'];
-        if (fareRaw is num) {
-          final fare = fareRaw.toDouble();
-          final distanceRaw =
-              data['estimatedDistance'] ?? data['distanceKm'] ?? data['distance'];
-          final durationRaw =
-              data['estimatedDuration'] ?? data['durationMinutes'] ?? data['duration'];
-          final distance = distanceRaw is num
-              ? distanceRaw.toDouble()
-              : const Distance().as(LengthUnit.Meter, pickup, destination) / 1000;
-          final duration = durationRaw is num
-              ? durationRaw.toInt()
-              : ((distance / 30) * 60).ceil();
-
-          debugPrint(
-            '[RideRequestService] Backend estimate: fare=NGN$fare dist=${distance.toStringAsFixed(1)} km dur=$duration min',
-          );
-
-          return RideEstimate(
-            pickupLabel: pickupLabel,
-            destinationLabel: destinationLabel,
-            pickupLatLng: pickup,
-            destinationLatLng: destination,
-            distanceKm: distance,
-            durationMinutes: duration,
-            fareNgn: fare,
-          );
+    if (response is Map<String, dynamic>) {
+      final data = response['data'] as Map<String, dynamic>? ?? response;
+      
+      // 1. Parse Fare
+      double? fare;
+      final fareObj = data['fare'];
+      if (fareObj is Map) {
+        final estRaw = fareObj['estimatedFare'] ?? fareObj['finalFare'];
+        if (estRaw != null) {
+          final parsed = double.tryParse(estRaw.toString().replaceAll(RegExp(r'[^\d.]'), ''));
+          if (parsed != null) fare = parsed / 100;
+        }
+      } else if (data['estimatedFare'] != null || fareObj != null) {
+        final raw = data['estimatedFare'] ?? fareObj;
+        if (raw is num) {
+          fare = raw.toDouble() / 100;
+        } else {
+          final parsed = double.tryParse(raw.toString().replaceAll(RegExp(r'[^\d.]'), ''));
+          if (parsed != null) fare = parsed / 100;
         }
       }
-    } catch (e) {
-      debugPrint('[RideRequestService] Backend estimate failed: $e. Falling back to local calculation.');
+
+      if (fare != null) {
+        // 2. Parse Route (Distance & Duration)
+        double? distance;
+        int? duration;
+
+        final routeObj = data['route'];
+        if (routeObj is Map) {
+          final distRaw = routeObj['estimatedDistanceKm'] ?? routeObj['distanceKm'];
+          if (distRaw is num) distance = distRaw.toDouble();
+          
+          final durRaw = routeObj['estimatedDurationMinutes'] ?? routeObj['durationMinutes'];
+          if (durRaw is num) duration = durRaw.toInt();
+        }
+
+        // Fallbacks if not inside 'route'
+        if (distance == null) {
+          final rootDist = data['estimatedDistance'] ?? data['distanceKm'] ?? data['distance'];
+          if (rootDist is num) distance = rootDist.toDouble();
+        }
+        if (duration == null) {
+          final rootDur = data['estimatedDuration'] ?? data['durationMinutes'] ?? data['duration'];
+          if (rootDur is num) duration = rootDur.toInt();
+        }
+
+        distance ??= const Distance().as(LengthUnit.Meter, pickup, destination) / 1000;
+        duration ??= ((distance / 30) * 60).ceil();
+
+        debugPrint(
+          '[RideRequestService] Backend estimate: fare=NGN$fare dist=${distance.toStringAsFixed(1)} km dur=$duration min',
+        );
+
+        return RideEstimate(
+          pickupLabel: pickupLabel,
+          destinationLabel: destinationLabel,
+          pickupLatLng: pickup,
+          destinationLatLng: destination,
+          distanceKm: distance,
+          durationMinutes: duration,
+          fareNgn: fare,
+        );
+      }
     }
-
-    // 2 - Local fallback
-    return _estimateLocally(
-      pickup: pickup,
-      pickupLabel: pickupLabel,
-      destination: destination,
-      destinationLabel: destinationLabel,
-      vehicleType: vehicleType,
-    );
-  }
-
-  Future<RideEstimate> _estimateLocally({
-    required LatLng pickup,
-    required String pickupLabel,
-    required LatLng destination,
-    required String destinationLabel,
-    required String vehicleType,
-  }) async {
-    final route = await _directions.getRoute(
-      origin: pickup,
-      destination: destination,
-    );
-
-    final double distanceMeters;
-    final int durationMinutes;
-
-    if (route != null) {
-      distanceMeters = route.distanceMeters;
-      durationMinutes = (route.durationSeconds / 60).ceil();
-    } else {
-      // Straight-line fallback (~30 km/h average speed).
-      distanceMeters = const Distance().as(LengthUnit.Meter, pickup, destination);
-      durationMinutes = ((distanceMeters / 1000) / 30 * 60).ceil();
-    }
-
-    final distanceKm = distanceMeters / 1000;
-    final multiplier = vehicleMultiplier(vehicleType);
-    final fareNgn = ((_baseFareNgn + distanceKm * _perKmNgn) * multiplier)
-        .clamp(_baseFareNgn * multiplier, double.infinity);
-
-    debugPrint('[RideRequestService] Local estimate: fare=NGN$fareNgn dist=${distanceKm.toStringAsFixed(1)} km dur=$durationMinutes min');
-
-    return RideEstimate(
-      pickupLabel: pickupLabel,
-      destinationLabel: destinationLabel,
-      pickupLatLng: pickup,
-      destinationLatLng: destination,
-      distanceKm: distanceKm,
-      durationMinutes: durationMinutes,
-      fareNgn: fareNgn,
-    );
+    throw Exception('Invalid estimate response from backend.');
   }
 
   // requestRide
@@ -277,3 +260,4 @@ class RideRequestService {
     }
   }
 }
+

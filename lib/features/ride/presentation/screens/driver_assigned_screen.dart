@@ -26,6 +26,7 @@ class DriverAssignedScreen extends StatefulWidget {
     this.driverRating,
     this.vehicleModel,
     this.plateNumber,
+    this.driverProfileImage,
     this.etaMinutes,
     this.pickupLatLng,
     this.destinationLatLng,
@@ -41,6 +42,7 @@ class DriverAssignedScreen extends StatefulWidget {
   final double? driverRating;
   final String? vehicleModel;
   final String? plateNumber;
+  final String? driverProfileImage;
   final int? etaMinutes;
   final LatLng? pickupLatLng;
   final LatLng? destinationLatLng;
@@ -175,6 +177,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
             driverPhone: widget.driverPhone,
             vehicleModel: widget.vehicleModel,
             plateNumber: widget.plateNumber,
+            driverProfileImage: widget.driverProfileImage,
             pickupLatLng: _pickupPoint,
             destinationLatLng: widget.destinationLatLng,
             destinationLabel: widget.destinationLabel,
@@ -233,12 +236,12 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final name = widget.driverName ?? 'Terwase O.';
+    final name = widget.driverName ?? 'Driver';
     final rating = widget.driverRating != null
         ? '⭐ ${widget.driverRating!.toStringAsFixed(1)}'
-        : '⭐ 4.8';
-    final vehicle = widget.vehicleModel ?? 'Toyota Corolla • White';
-    final plate = widget.plateNumber ?? 'ABC-123-XY';
+        : '⭐ New';
+    final vehicle = widget.vehicleModel ?? 'Vehicle Details';
+    final plate = widget.plateNumber ?? 'Plate Info';
 
     // Build markers for map: Rider Pickup Point + Live Moving Driver Car
     final markers = <Marker>[
@@ -425,12 +428,18 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
                     // Driver Profile Details
                     Row(
                       children: [
-                        const CircleAvatar(
-                          radius: 26,
-                          backgroundColor: AppColors.primaryContainer,
-                          child: Icon(Icons.person,
-                              color: AppColors.onPrimaryContainer, size: 30),
-                        ),
+                        widget.driverProfileImage != null
+                            ? CircleAvatar(
+                                radius: 26,
+                                backgroundImage: NetworkImage(widget.driverProfileImage!),
+                                backgroundColor: AppColors.primaryContainer,
+                              )
+                            : const CircleAvatar(
+                                radius: 26,
+                                backgroundColor: AppColors.primaryContainer,
+                                child: Icon(Icons.person,
+                                    color: AppColors.onPrimaryContainer, size: 30),
+                              ),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(

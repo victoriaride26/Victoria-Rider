@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../../core/services/location_service.dart';
+import '../../../../core/models/geocoding_result.dart';
+import '../../../../core/services/geoapify_geocoding_service.dart';
 import '../../../../core/services/mapbox_geocoding_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
@@ -40,7 +42,8 @@ class DestinationSearchScreen extends StatefulWidget {
 }
 
 class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
-  final _geocoding = MapboxGeocodingService();
+  final _geoapifyGeocoding = GeoapifyGeocodingService();
+  final _mapboxGeocoding = MapboxGeocodingService();
   final _locationService = LocationService();
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
@@ -87,7 +90,8 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _focusNode.dispose();
-    _geocoding.dispose();
+    _geoapifyGeocoding.dispose();
+    _mapboxGeocoding.dispose();
     _locationService.dispose();
     super.dispose();
   }
@@ -108,10 +112,18 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
     setState(() => _isSearching = true);
 
     _debounce = Timer(const Duration(milliseconds: 380), () async {
-      final results = await _geocoding.search(
-        query,
-        proximity: _currentPickup?.position ?? widget.currentLocation?.position,
-      );
+      List<GeocodingResult> results;
+      if (_activeTarget == SearchTarget.pickup) {
+        results = await _mapboxGeocoding.search(
+          query,
+          proximity: _currentPickup?.position ?? widget.currentLocation?.position,
+        );
+      } else {
+        results = await _geoapifyGeocoding.search(
+          query,
+          proximity: _currentPickup?.position ?? widget.currentLocation?.position,
+        );
+      }
       if (mounted) {
         setState(() {
           _searchResults = results;

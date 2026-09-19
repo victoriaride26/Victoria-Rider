@@ -7,7 +7,8 @@ import 'package:http/testing.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:vtrides/core/network/api_client.dart';
 import 'package:vtrides/core/services/location_service.dart';
-import 'package:vtrides/core/services/mapbox_geocoding_service.dart';
+import 'package:vtrides/core/models/geocoding_result.dart';
+
 import 'package:vtrides/features/ride/data/ride_request_service.dart';
 import 'package:vtrides/features/ride/presentation/widgets/ride_request_sheet.dart';
 

@@ -6,8 +6,10 @@ import 'package:latlong2/latlong.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/location_service.dart';
-import '../../../../core/services/mapbox_geocoding_service.dart';
+import '../../../../core/models/geocoding_result.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../payments/data/rider_wallet_repository.dart';
+import '../../../payments/presentation/widgets/fund_wallet_sheet.dart';
 import '../../data/ride_request_service.dart';
 import '../screens/searching_for_driver_screen.dart';
 
@@ -69,6 +71,14 @@ class _RideRequestSheetState extends State<RideRequestSheet>
   bool _requesting = false;
   String? _requestError;
 
+  double? _walletBalance;
+  bool _walletLoading = true;
+
+  bool get _isWalletInsufficient {
+    if (_walletBalance == null || _estimate == null) return false;
+    return _walletBalance! < _adjustedFare;
+  }
+
   static const _vehicles = [
     _VehicleOption('standard', Icons.directions_car, 'VT Standard',
         'Comfortable everyday ride'),
@@ -101,6 +111,24 @@ class _RideRequestSheetState extends State<RideRequestSheet>
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
     _loadEstimate();
+    _loadWalletBalance();
+  }
+
+  Future<void> _loadWalletBalance() async {
+    try {
+      final bal = await RiderWalletRepository.instance.getBalance();
+      if (mounted) {
+        setState(() {
+          _walletBalance = bal;
+          _walletLoading = false;
+          if (_selectedPayment == 'wallet' && _isWalletInsufficient) {
+            _selectedPayment = 'cash';
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _walletLoading = false);
+    }
   }
 
   @override
@@ -129,9 +157,21 @@ class _RideRequestSheetState extends State<RideRequestSheet>
         destinationLabel: widget.destination.shortName,
         vehicleType: _selectedVehicle,
       );
-      if (mounted) setState(() => _estimate = est);
+      if (mounted) {
+        setState(() {
+          _estimate = est;
+          if (_selectedPayment == 'wallet' && _isWalletInsufficient) {
+            _selectedPayment = 'cash';
+          }
+        });
+      }
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted) setState(() => _error = 'Could not load estimate.');
+      if (mounted) {
+        final rawMsg = e.toString().replaceFirst('Exception: ', '');
+        setState(() => _error = rawMsg.isNotEmpty ? rawMsg : 'Could not load estimate.');
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -139,6 +179,14 @@ class _RideRequestSheetState extends State<RideRequestSheet>
 
   Future<void> _confirm() async {
     if (_estimate == null || _requesting) return;
+
+    if (_selectedPayment == 'wallet' && _isWalletInsufficient) {
+      setState(() {
+        _requestError =
+            'Insufficient wallet balance (₦${(_walletBalance ?? 0).toStringAsFixed(0)}). Ride fare is $_formattedFare. Please fund your wallet or choose another payment method.';
+      });
+      return;
+    }
 
     // ── Option 3: location gate at confirm-time ──────────────────────────
     // If no location was passed into the sheet, try to acquire one now.
@@ -482,7 +530,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                   if (_loading)
                     _EstimateLoading(pulse: _pulse)
                   else if (_error != null)
-                    _EstimateError(onRetry: _loadEstimate)
+                    _EstimateError(errorMessage: _error!, onRetry: _loadEstimate)
                   else if (_estimate != null)
                     _EstimateBadges(
                       distanceKm: _estimate!.distanceKm,
@@ -512,8 +560,14 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                         : '—';
 
                     return GestureDetector(
-                      onTap: () =>
-                          setState(() => _selectedVehicle = v.id),
+                      onTap: () {
+                        setState(() {
+                          _selectedVehicle = v.id;
+                          if (_selectedPayment == 'wallet' && _isWalletInsufficient) {
+                            _selectedPayment = 'cash';
+                          }
+                        });
+                      },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         margin: const EdgeInsets.only(bottom: 10),
@@ -611,53 +665,158 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                             children: List.generate(2, (col) {
                               final i = row * 2 + col;
                               final p = _payments[i];
-                              final isSelected = _selectedPayment == p.id;
+                              final isWallet = p.id == 'wallet';
+                              final isWalletDisabled =
+                                  isWallet && _isWalletInsufficient;
+                              final isSelected =
+                                  !isWalletDisabled && _selectedPayment == p.id;
+
                               return Expanded(
                                 child: GestureDetector(
-                                  onTap: () =>
-                                      setState(() => _selectedPayment = p.id),
+                                  onTap: isWalletDisabled
+                                      ? () {
+                                          ScaffoldMessenger.of(context)
+                                              .hideCurrentSnackBar();
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Insufficient wallet balance (₦${(_walletBalance ?? 0).toStringAsFixed(0)}). Ride fare is $_formattedFare.',
+                                              ),
+                                              duration:
+                                                  const Duration(seconds: 4),
+                                              behavior:
+                                                  SnackBarBehavior.floating,
+                                              action: SnackBarAction(
+                                                label: 'Fund Wallet',
+                                                textColor: Colors.amberAccent,
+                                                onPressed: () {
+                                                  FundWalletSheet.show(
+                                                    context,
+                                                    currentBalance:
+                                                        _walletBalance,
+                                                    onFundingSuccess: (newBal) {
+                                                      if (mounted) {
+                                                        setState(() {
+                                                          _walletBalance =
+                                                              newBal;
+                                                          if (!_isWalletInsufficient) {
+                                                            _selectedPayment =
+                                                                'wallet';
+                                                          }
+                                                        });
+                                                      }
+                                                    },
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      : () => setState(
+                                          () => _selectedPayment = p.id),
                                   child: AnimatedContainer(
                                     duration:
                                         const Duration(milliseconds: 180),
+                                    height: 86,
                                     margin: EdgeInsets.only(
                                         right: col == 0 ? 10 : 0),
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 14),
+                                        horizontal: 8, vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: isSelected
-                                          ? AppColors.primary
-                                              .withValues(alpha: 0.08)
-                                          : AppColors.surfaceContainerLow,
+                                      color: isWalletDisabled
+                                          ? AppColors.surfaceContainerLow
+                                              .withValues(alpha: 0.5)
+                                          : isSelected
+                                              ? AppColors.primary
+                                                  .withValues(alpha: 0.08)
+                                              : AppColors.surfaceContainerLow,
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
-                                        color: isSelected
-                                            ? AppColors.primary
-                                            : AppColors.surfaceContainerHigh,
+                                        color: isWalletDisabled
+                                            ? AppColors.error
+                                                .withValues(alpha: 0.3)
+                                            : isSelected
+                                                ? AppColors.primary
+                                                : AppColors
+                                                    .surfaceContainerHigh,
                                         width: isSelected ? 1.5 : 1,
                                       ),
                                     ),
                                     child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
                                         Icon(
                                           p.icon,
-                                          color: isSelected
-                                              ? AppColors.primary
-                                              : AppColors.onSurfaceVariant,
-                                          size: 24,
+                                          color: isWalletDisabled
+                                              ? AppColors.onSurfaceVariant
+                                                  .withValues(alpha: 0.35)
+                                              : isSelected
+                                                  ? AppColors.primary
+                                                  : AppColors.onSurfaceVariant,
+                                          size: 22,
                                         ),
-                                        const SizedBox(height: 6),
+                                        const SizedBox(height: 3),
                                         Text(
                                           p.label,
                                           style: theme.textTheme.labelMedium
                                               ?.copyWith(
-                                            color: isSelected
-                                                ? AppColors.primary
-                                                : AppColors.onSurfaceVariant,
+                                            color: isWalletDisabled
+                                                ? AppColors.onSurfaceVariant
+                                                    .withValues(alpha: 0.45)
+                                                : isSelected
+                                                    ? AppColors.primary
+                                                    : AppColors
+                                                        .onSurfaceVariant,
                                             fontWeight: isSelected
                                                 ? FontWeight.w700
                                                 : FontWeight.w500,
+                                            fontSize: 12,
                                           ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
+                                        const SizedBox(height: 3),
+                                        if (isWalletDisabled)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 5, vertical: 1.5),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.error
+                                                  .withValues(alpha: 0.12),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: const Text(
+                                              'Insufficient Funds',
+                                              style: TextStyle(
+                                                color: AppColors.error,
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: -0.2,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          )
+                                        else if (isWallet &&
+                                            _walletBalance != null)
+                                          Text(
+                                            '₦${_walletBalance!.toStringAsFixed(0)}',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: isSelected
+                                                  ? AppColors.primary
+                                                  : AppColors.onSurfaceVariant
+                                                      .withValues(alpha: 0.7),
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          )
+                                        else
+                                          const SizedBox(height: 16),
                                       ],
                                     ),
                                   ),
@@ -1032,7 +1191,8 @@ class _ShimmerBox extends StatelessWidget {
 }
 
 class _EstimateError extends StatelessWidget {
-  const _EstimateError({required this.onRetry});
+  const _EstimateError({required this.errorMessage, required this.onRetry});
+  final String errorMessage;
   final VoidCallback onRetry;
 
   @override
@@ -1041,10 +1201,10 @@ class _EstimateError extends StatelessWidget {
       children: [
         const Icon(Icons.error_outline, color: AppColors.error, size: 18),
         const SizedBox(width: 8),
-        const Expanded(
+        Expanded(
           child: Text(
-            'Could not estimate fare.',
-            style: TextStyle(color: AppColors.error, fontSize: 13),
+            errorMessage,
+            style: const TextStyle(color: AppColors.error, fontSize: 13),
           ),
         ),
         TextButton(onPressed: onRetry, child: const Text('Retry')),

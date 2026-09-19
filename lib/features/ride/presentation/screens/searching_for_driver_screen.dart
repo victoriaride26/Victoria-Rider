@@ -47,6 +47,12 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
   StreamSubscription<Map<String, dynamic>>? _acceptedSub;
   StreamSubscription<Map<String, dynamic>>? _stateSub;
   Timer? _pollTimer;
+  Timer? _countdownTimer;
+  
+  static const int _maxSearchSeconds = 120;
+  int _secondsRemaining = _maxSearchSeconds;
+  bool _searchTimedOut = false;
+  
   bool _navigated = false;
 
   @override
@@ -80,11 +86,36 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
         }
       });
 
-      // 2. Periodic polling fallback every 3 seconds
-      _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-        _checkRideStatus();
-      });
+      // 2. Periodic polling and countdown timer
+      _startSearchTimers();
     }
+  }
+
+  void _startSearchTimers() {
+    setState(() {
+      _secondsRemaining = _maxSearchSeconds;
+      _searchTimedOut = false;
+    });
+
+    _pollTimer?.cancel();
+    _countdownTimer?.cancel();
+
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _checkRideStatus();
+    });
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        if (_secondsRemaining > 0) {
+          _secondsRemaining--;
+        } else {
+          _searchTimedOut = true;
+          _pollTimer?.cancel();
+          _countdownTimer?.cancel();
+        }
+      });
+    });
   }
 
   Future<void> _checkRideStatus() async {
@@ -108,6 +139,7 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
     if (_navigated || !mounted) return;
     _navigated = true;
     _pollTimer?.cancel();
+    _countdownTimer?.cancel();
     _acceptedSub?.cancel();
     _stateSub?.cancel();
 
@@ -138,6 +170,9 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
       }
     }
 
+    final driverProfileImage = driver?['profileImage']?.toString() ??
+        data['driverProfileImage']?.toString();
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => DriverAssignedScreen(
@@ -152,6 +187,7 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
               : data['vehicleModel']?.toString(),
           plateNumber: vehicle?['plateNumber']?.toString() ??
               data['plateNumber']?.toString(),
+          driverProfileImage: driverProfileImage,
           etaMinutes: (data['etaMinutes'] ?? driver?['etaMinutes']) is num
               ? (data['etaMinutes'] ?? driver?['etaMinutes']).toInt()
               : null,
@@ -168,6 +204,7 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
 
   Future<void> _cancelRide() async {
     _pollTimer?.cancel();
+    _countdownTimer?.cancel();
     _acceptedSub?.cancel();
     _stateSub?.cancel();
     if (widget.rideId != null && widget.rideId!.isNotEmpty) {
@@ -184,6 +221,7 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _countdownTimer?.cancel();
     _acceptedSub?.cancel();
     _stateSub?.cancel();
     if (widget.enableRealtime) {
@@ -208,42 +246,101 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 16),
-                Container(
-                  width: 104,
-                  height: 104,
-                  decoration: const BoxDecoration(
-                    color: AppColors.primaryContainer,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Center(
-                    child: SizedBox(
-                      width: 52,
-                      height: 52,
-                      child: CircularProgressIndicator(
-                        color: AppColors.primary,
-                        strokeWidth: 3,
+                if (_searchTimedOut)
+                  Column(
+                    children: [
+                      Container(
+                        width: 104,
+                        height: 104,
+                        decoration: BoxDecoration(
+                          color: AppColors.error.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.timer_off_outlined,
+                          size: 40,
+                          color: AppColors.error,
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Search Timed Out',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: AppColors.error,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No drivers accepted the request in time. Would you like to try again?',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: AppColors.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 32),
+                      AppPrimaryButton(
+                        label: 'Retry Search',
+                        onPressed: _startSearchTimers,
+                      ),
+                    ],
+                  )
+                else
+                  Column(
+                    children: [
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            width: 120,
+                            height: 120,
+                            child: CircularProgressIndicator(
+                              value: _secondsRemaining / _maxSearchSeconds,
+                              color: AppColors.primary,
+                              backgroundColor: AppColors.surfaceContainerHigh,
+                              strokeWidth: 6,
+                            ),
+                          ),
+                          Container(
+                            width: 90,
+                            height: 90,
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${(_secondsRemaining ~/ 60)}:${(_secondsRemaining % 60).toString().padLeft(2, '0')}',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Finding your Victoria driver nearby...',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Notifying the closest drivers within 10km. Please hold on.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: AppColors.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 32),
+                      AppPrimaryButton(
+                        label: 'Cancel Request',
+                        onPressed: _cancelRide,
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'Finding your Victoria driver nearby...',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Notifying the closest drivers within 10km. Please hold on.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: AppColors.onSurfaceVariant),
-                ),
-                const SizedBox(height: 32),
-                AppPrimaryButton(
-                  label: 'Cancel Request',
-                  onPressed: _cancelRide,
-                ),
               ],
             ),
           ),
