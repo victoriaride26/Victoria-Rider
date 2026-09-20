@@ -38,10 +38,16 @@ class _LoginScreenState extends State<LoginScreen> {
     final session = SessionController.instance;
     _rememberMe = session.rememberMe;
     final rememberedEmail = session.rememberedEmail;
+    final rememberedPassword = session.rememberedPassword;
     if (widget.initialEmail != null && widget.initialEmail!.isNotEmpty) {
       _emailController.text = widget.initialEmail!;
     } else if (rememberedEmail != null && rememberedEmail.isNotEmpty) {
       _emailController.text = rememberedEmail;
+    }
+    if (_rememberMe &&
+        rememberedPassword != null &&
+        rememberedPassword.isNotEmpty) {
+      _passwordController.text = rememberedPassword;
     }
   }
 
@@ -77,6 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await SessionController.instance.saveRememberPrefs(
         rememberMe: _rememberMe,
         email: _emailController.text.trim(),
+        password: _passwordController.text,
       );
       if (!mounted) return;
       AppRouter.pushAndClearStack(context, const RiderHomeShell());
@@ -214,8 +221,16 @@ class _LoginScreenState extends State<LoginScreen> {
                               children: [
                                 Checkbox(
                                   value: _rememberMe,
-                                  onChanged: (v) => setState(
-                                      () => _rememberMe = v ?? true),
+                                  onChanged: (v) {
+                                    final newVal = v ?? true;
+                                    setState(() => _rememberMe = newVal);
+                                    if (!newVal) {
+                                      SessionController.instance
+                                          .saveRememberPrefs(
+                                        rememberMe: false,
+                                      );
+                                    }
+                                  },
                                   visualDensity: VisualDensity.compact,
                                   materialTapTargetSize:
                                       MaterialTapTargetSize.shrinkWrap,

@@ -64,6 +64,7 @@ class SessionController {
   static const _kUser = 'vr_user';
   static const _kRememberMe = 'vr_remember_me';
   static const _kEmail = 'vr_remember_email';
+  static const _kPassword = 'vr_remember_password';
 
   String? accessToken;
   String? refreshToken;
@@ -78,6 +79,9 @@ class SessionController {
 
   /// Last email used to sign in, surfaced to prefill the login field.
   String? rememberedEmail;
+
+  /// Last password used to sign in, surfaced to prefill the login field.
+  String? rememberedPassword;
 
   /// Cached profile from the last login/refresh response.
   ///
@@ -108,9 +112,12 @@ class SessionController {
       rememberMe = rm != 'false';
       final email = await tokenStore.read(_kEmail);
       rememberedEmail = (email != null && email.isNotEmpty) ? email : null;
+      final pwd = await tokenStore.read(_kPassword);
+      rememberedPassword = (pwd != null && pwd.isNotEmpty) ? pwd : null;
     } catch (_) {
       rememberMe = true;
       rememberedEmail = null;
+      rememberedPassword = null;
     }
   }
 
@@ -169,13 +176,14 @@ class SessionController {
     }
   }
 
-  /// Records the user's "remember me" choice and the email to prefill.
+  /// Records the user's "remember me" choice and the credentials to prefill.
   ///
-  /// When [rememberMe] is false any previously persisted session is removed
-  /// so the driver is not silently signed back in next launch.
+  /// When [rememberMe] is false any previously persisted credentials and session
+  /// are removed so the user is not silently prefilled or signed back in next launch.
   Future<void> saveRememberPrefs({
     required bool rememberMe,
     String? email,
+    String? password,
   }) async {
     this.rememberMe = rememberMe;
     try {
@@ -185,9 +193,15 @@ class SessionController {
           rememberedEmail = email;
           await tokenStore.write(_kEmail, email);
         }
+        if (password != null && password.isNotEmpty) {
+          rememberedPassword = password;
+          await tokenStore.write(_kPassword, password);
+        }
       } else {
         rememberedEmail = null;
+        rememberedPassword = null;
         await tokenStore.delete(_kEmail);
+        await tokenStore.delete(_kPassword);
         await _deleteStoredSession();
       }
     } catch (_) {
