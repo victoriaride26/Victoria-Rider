@@ -310,7 +310,26 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
                       const SizedBox(height: 32),
                       AppPrimaryButton(
                         label: 'Retry Search',
+                        icon: Icons.refresh,
                         onPressed: _startSearchTimers,
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: _cancelRide,
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          side: const BorderSide(color: AppColors.outlineVariant),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel Request',
+                          style: TextStyle(
+                            color: AppColors.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ],
                   )
