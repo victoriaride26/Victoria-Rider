@@ -33,7 +33,20 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const AppBackButton(),
+        leading: AppBackButton(
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute<void>(
+                  builder: (_) => const RiderHomeShell(),
+                ),
+                (route) => false,
+              );
+            }
+          },
+        ),
         title: const Text('Victoria'),
         actions: const [
           Padding(

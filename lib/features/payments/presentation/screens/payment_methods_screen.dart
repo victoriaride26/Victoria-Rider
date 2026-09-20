@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
+import '../../../rider/presentation/screens/rider_home_shell.dart';
 import '../../../rider/presentation/widgets/rider_scaffold.dart';
 
 /// R-16 — Payment Methods.
@@ -25,7 +26,20 @@ class PaymentMethodsScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            const AppBackButton(),
+            AppBackButton(
+              onPressed: () {
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                } else {
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const RiderHomeShell(initialIndex: 0),
+                    ),
+                    (route) => false,
+                  );
+                }
+              },
+            ),
             const SizedBox(height: 8),
             Text('Payment Methods',
                 style: theme.textTheme.headlineMedium),

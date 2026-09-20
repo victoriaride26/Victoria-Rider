@@ -104,14 +104,34 @@ class _RiderHomeShellState extends State<RiderHomeShell>
       const ProfileScreen(),
     ];
 
-    return Scaffold(
-      key: _scaffoldKey,
-      drawer: RiderDrawer(onSelectTab: _setTab),
-      body: IndexedStack(index: _index, children: screens),
-      bottomNavigationBar: RiderBottomNav(
-        currentIndex: _index,
-        onTap: _setTab,
+    return RiderShellScope(
+      selectTab: _setTab,
+      child: Scaffold(
+        key: _scaffoldKey,
+        drawer: RiderDrawer(onSelectTab: _setTab),
+        body: IndexedStack(index: _index, children: screens),
+        bottomNavigationBar: RiderBottomNav(
+          currentIndex: _index,
+          onTap: _setTab,
+        ),
       ),
     );
   }
+}
+
+/// Scope allowing descendent screens to switch tabs in [RiderHomeShell].
+class RiderShellScope extends InheritedWidget {
+  const RiderShellScope({
+    super.key,
+    required this.selectTab,
+    required super.child,
+  });
+
+  final void Function(int index) selectTab;
+
+  static RiderShellScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<RiderShellScope>();
+
+  @override
+  bool updateShouldNotify(RiderShellScope oldWidget) => false;
 }

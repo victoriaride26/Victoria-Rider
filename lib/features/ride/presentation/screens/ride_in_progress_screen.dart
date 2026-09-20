@@ -10,9 +10,11 @@ import '../../../../core/config/mapbox_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/rider_socket_service.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
 import '../../../../core/widgets/driver_avatar.dart';
 import '../../../../core/widgets/mapbox_map_view.dart';
+import '../../../rider/presentation/screens/rider_home_shell.dart';
 import '../widgets/in_ride_chat_sheet.dart';
 import 'trip_completed_screen.dart';
 
@@ -286,13 +288,50 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         children: [
           Expanded(
             flex: 3,
-            child: MapboxMapView(
-              mapController: _mapController,
-              center: mapCenter,
-              zoom: 14,
-              showUserLocation: true,
-              markers: markers,
-              polylines: polylines,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: MapboxMapView(
+                    mapController: _mapController,
+                    center: mapCenter,
+                    zoom: 14,
+                    showUserLocation: true,
+                    markers: markers,
+                    polylines: polylines,
+                  ),
+                ),
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: 16,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface.withValues(alpha: 0.9),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: AppBackButton(
+                      onPressed: () {
+                        if (Navigator.of(context).canPop()) {
+                          Navigator.of(context).pop();
+                        } else {
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const RiderHomeShell(),
+                            ),
+                            (route) => false,
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(

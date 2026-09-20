@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
+import '../../../rider/presentation/screens/rider_home_shell.dart';
 import 'rate_driver_screen.dart';
 
 /// R-12 — Trip Completed (Payment & Receipt).
@@ -28,7 +29,20 @@ class TripCompletedScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const AppBackButton(),
+        leading: AppBackButton(
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute<void>(
+                  builder: (_) => const RiderHomeShell(),
+                ),
+                (route) => false,
+              );
+            }
+          },
+        ),
         title: const Text('Victoria'),
         actions: const [
           Padding(
