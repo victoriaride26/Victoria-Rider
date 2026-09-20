@@ -70,13 +70,25 @@ class _RideRequestSheetState extends State<RideRequestSheet>
   String _selectedPayment = 'cash';
   bool _requesting = false;
   String? _requestError;
+  bool _showWalletNotice = false;
 
   double? _walletBalance;
-  bool _walletLoading = true;
 
   bool get _isWalletInsufficient {
     if (_walletBalance == null || _estimate == null) return false;
     return _walletBalance! < _adjustedFare;
+  }
+
+  void _selectPayment(String paymentId) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    setState(() {
+      _selectedPayment = paymentId;
+      _showWalletNotice = false;
+      if (_requestError != null &&
+          _requestError!.toLowerCase().contains('wallet')) {
+        _requestError = null;
+      }
+    });
   }
 
   static const _vehicles = [
@@ -120,14 +132,14 @@ class _RideRequestSheetState extends State<RideRequestSheet>
       if (mounted) {
         setState(() {
           _walletBalance = bal;
-          _walletLoading = false;
           if (_selectedPayment == 'wallet' && _isWalletInsufficient) {
             _selectedPayment = 'cash';
+            _showWalletNotice = false;
           }
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _walletLoading = false);
+      // Keep existing balance if fetch fails
     }
   }
 
@@ -162,6 +174,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
           _estimate = est;
           if (_selectedPayment == 'wallet' && _isWalletInsufficient) {
             _selectedPayment = 'cash';
+            _showWalletNotice = false;
           }
         });
       }
@@ -182,8 +195,8 @@ class _RideRequestSheetState extends State<RideRequestSheet>
 
     if (_selectedPayment == 'wallet' && _isWalletInsufficient) {
       setState(() {
-        _requestError =
-            'Insufficient wallet balance (₦${(_walletBalance ?? 0).toStringAsFixed(0)}). Ride fare is $_formattedFare. Please fund your wallet or choose another payment method.';
+        _showWalletNotice = true;
+        _requestError = null;
       });
       return;
     }
@@ -565,6 +578,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                           _selectedVehicle = v.id;
                           if (_selectedPayment == 'wallet' && _isWalletInsufficient) {
                             _selectedPayment = 'cash';
+                            _showWalletNotice = false;
                           }
                         });
                       },
@@ -673,48 +687,16 @@ class _RideRequestSheetState extends State<RideRequestSheet>
 
                               return Expanded(
                                 child: GestureDetector(
-                                  onTap: isWalletDisabled
-                                      ? () {
-                                          ScaffoldMessenger.of(context)
-                                              .hideCurrentSnackBar();
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                'Insufficient wallet balance (₦${(_walletBalance ?? 0).toStringAsFixed(0)}). Ride fare is $_formattedFare.',
-                                              ),
-                                              duration:
-                                                  const Duration(seconds: 4),
-                                              behavior:
-                                                  SnackBarBehavior.floating,
-                                              action: SnackBarAction(
-                                                label: 'Fund Wallet',
-                                                textColor: Colors.amberAccent,
-                                                onPressed: () {
-                                                  FundWalletSheet.show(
-                                                    context,
-                                                    currentBalance:
-                                                        _walletBalance,
-                                                    onFundingSuccess: (newBal) {
-                                                      if (mounted) {
-                                                        setState(() {
-                                                          _walletBalance =
-                                                              newBal;
-                                                          if (!_isWalletInsufficient) {
-                                                            _selectedPayment =
-                                                                'wallet';
-                                                          }
-                                                        });
-                                                      }
-                                                    },
-                                                  );
-                                                },
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      : () => setState(
-                                          () => _selectedPayment = p.id),
+                                  onTap: () {
+                                    if (isWalletDisabled) {
+                                      setState(() {
+                                        _showWalletNotice = true;
+                                        _requestError = null;
+                                      });
+                                    } else {
+                                      _selectPayment(p.id);
+                                    }
+                                  },
                                   child: AnimatedContainer(
                                     duration:
                                         const Duration(milliseconds: 180),
@@ -828,7 +810,12 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                     ],
                   ),
 
-                  const SizedBox(height: 24),
+                  // ── Fund Wallet In-Sheet Notice Banner ───────────────────
+                  if (_showWalletNotice &&
+                      (_selectedPayment == 'wallet' || _isWalletInsufficient)) ...[
+                    _buildFundWalletNotice(theme),
+                    const SizedBox(height: 16),
+                  ],
 
                   // ── Victoria Shield note ────────────────────────────────
                   Container(
@@ -949,6 +936,166 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFundWalletNotice(ThemeData theme) {
+    final balanceStr = _walletBalance != null
+        ? '₦${_walletBalance!.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}'
+        : '₦0';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFF59E0B).withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.account_balance_wallet_rounded,
+                  color: Color(0xFFB45309),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Insufficient Wallet Balance',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        color: Color(0xFF92400E),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Wallet: $balanceStr  •  Ride Fare: $_formattedFare',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFB45309),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 18),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                color: const Color(0xFF92400E),
+                onPressed: () => setState(() => _showWalletNotice = false),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'You can top up your wallet instantly via Paystack, or continue with Cash payment.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Color(0xFF78350F),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 38,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFD97706),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      elevation: 0,
+                    ),
+                    onPressed: () {
+                      FundWalletSheet.show(
+                        context,
+                        currentBalance: _walletBalance,
+                        onFundingSuccess: (newBal) {
+                          if (mounted) {
+                            setState(() {
+                              _walletBalance = newBal;
+                              if (!_isWalletInsufficient) {
+                                _selectedPayment = 'wallet';
+                                _showWalletNotice = false;
+                              }
+                            });
+                          }
+                        },
+                      );
+                    },
+                    icon: const Icon(Icons.add_circle_outline, size: 16),
+                    label: const Text(
+                      'Fund Wallet',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 38,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF92400E),
+                    side: const BorderSide(
+                      color: Color(0xFFF59E0B),
+                      width: 1.2,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  onPressed: () => _selectPayment('cash'),
+                  child: const Text(
+                    'Use Cash',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

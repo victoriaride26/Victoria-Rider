@@ -11,6 +11,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../core/services/rider_socket_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_primary_button.dart';
+import '../../../../core/widgets/driver_avatar.dart';
 import '../../../../core/widgets/mapbox_map_view.dart';
 import '../widgets/in_ride_chat_sheet.dart';
 import 'trip_completed_screen.dart';
@@ -334,18 +335,10 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        widget.driverProfileImage != null
-                            ? CircleAvatar(
-                                radius: 22,
-                                backgroundImage: NetworkImage(widget.driverProfileImage!),
-                                backgroundColor: AppColors.primaryContainer,
-                              )
-                            : const CircleAvatar(
-                                radius: 22,
-                                backgroundColor: AppColors.primaryContainer,
-                                child: Icon(Icons.person,
-                                    color: AppColors.onPrimaryContainer),
-                              ),
+                        DriverAvatar(
+                          imageUrl: widget.driverProfileImage,
+                          radius: 22,
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(

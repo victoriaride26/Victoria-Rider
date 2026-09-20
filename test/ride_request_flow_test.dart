@@ -132,6 +132,36 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
+      final mockClient = MockClient((request) async {
+        if (request.url.path.contains('/rides/estimate')) {
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'data': {
+                'estimatedFare': 150000,
+                'distance': 3.5,
+                'duration': 10,
+              },
+            }),
+            200,
+          );
+        }
+        if (request.url.path.contains('/wallet')) {
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'data': {'balance': 500000},
+            }),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode({'success': false, 'message': 'No available drivers right now'}),
+          400,
+        );
+      });
+      ApiClient.setTestClient(mockClient);
+
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(

@@ -7,6 +7,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/rider_socket_service.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/image_url_helper.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
 import 'driver_assigned_screen.dart';
@@ -170,8 +171,36 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
       }
     }
 
-    final driverProfileImage = driver?['profileImage']?.toString() ??
-        data['driverProfileImage']?.toString();
+    final rawProfileImage = driver?['profilePhoto']?.toString() ??
+        driver?['profilePhotoUrl']?.toString() ??
+        driver?['avatar']?.toString() ??
+        driver?['avatarUrl']?.toString() ??
+        driver?['photoUrl']?.toString() ??
+        driver?['profileImage']?.toString() ??
+        driver?['photo']?.toString() ??
+        driver?['imageUrl']?.toString() ??
+        (driver?['profile'] is Map
+            ? (driver!['profile']['profilePhoto']?.toString() ??
+                driver['profile']['avatar']?.toString() ??
+                driver['profile']['photoUrl']?.toString())
+            : null) ??
+        driverUser?['profilePhoto']?.toString() ??
+        driverUser?['profilePhotoUrl']?.toString() ??
+        driverUser?['avatar']?.toString() ??
+        driverUser?['avatarUrl']?.toString() ??
+        driverUser?['photoUrl']?.toString() ??
+        driverUser?['profileImage']?.toString() ??
+        driverUser?['photo']?.toString() ??
+        driverUser?['imageUrl']?.toString() ??
+        data['driverProfilePhoto']?.toString() ??
+        data['driverProfilePhotoUrl']?.toString() ??
+        data['driverAvatar']?.toString() ??
+        data['driverAvatarUrl']?.toString() ??
+        data['driverPhotoUrl']?.toString() ??
+        data['driverProfileImage']?.toString() ??
+        data['driverPhoto']?.toString();
+
+    final driverProfileImage = ImageUrlHelper.normalize(rawProfileImage);
 
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(

@@ -12,6 +12,7 @@ import '../../../../core/services/rider_socket_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
+import '../../../../core/widgets/driver_avatar.dart';
 import '../../../../core/widgets/mapbox_map_view.dart';
 import '../widgets/in_ride_chat_sheet.dart';
 import 'ride_in_progress_screen.dart';
@@ -428,18 +429,10 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
                     // Driver Profile Details
                     Row(
                       children: [
-                        widget.driverProfileImage != null
-                            ? CircleAvatar(
-                                radius: 26,
-                                backgroundImage: NetworkImage(widget.driverProfileImage!),
-                                backgroundColor: AppColors.primaryContainer,
-                              )
-                            : const CircleAvatar(
-                                radius: 26,
-                                backgroundColor: AppColors.primaryContainer,
-                                child: Icon(Icons.person,
-                                    color: AppColors.onPrimaryContainer, size: 30),
-                              ),
+                        DriverAvatar(
+                          imageUrl: widget.driverProfileImage,
+                          radius: 26,
+                        ),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(

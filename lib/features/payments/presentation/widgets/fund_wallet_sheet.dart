@@ -26,6 +26,7 @@ class FundWalletSheet extends StatefulWidget {
   }) {
     return showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => FundWalletSheet(
