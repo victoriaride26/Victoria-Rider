@@ -6,9 +6,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
-import '../../../rider/presentation/screens/rider_home_shell.dart';
 import 'rate_driver_screen.dart';
 
 /// R-12 — Trip Completed (Payment & Receipt).
@@ -151,30 +149,19 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
     final cleanPickup = _cleanAddress(widget.pickupAddress, 'Wurukum Roundabout, Makurdi');
     final cleanDropoff = _cleanAddress(widget.dropoffAddress, 'High Level Market, Makurdi');
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: AppBackButton(
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            } else {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute<void>(
-                  builder: (_) => const RiderHomeShell(),
-                ),
-                (route) => false,
-              );
-            }
-          },
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          title: const Text('Victoria Rides'),
+          actions: const [
+            Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: Icon(Icons.help_outline, color: AppColors.onSurfaceVariant),
+            ),
+          ],
         ),
-        title: const Text('Victoria Rides'),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: Icon(Icons.help_outline, color: AppColors.onSurfaceVariant),
-          ),
-        ],
-      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -390,7 +377,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              // Action buttons
+              // Action buttons: payment must be completed before showing Rate Driver
               if (!_isPaymentConfirmed) ...[
                 AppPrimaryButton(
                   label: _isProcessingPayment
@@ -401,35 +388,25 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
                   onPressed: _isProcessingPayment ? null : _payWithPaystack,
                 ),
                 const SizedBox(height: 12),
-              ],
-              AppPrimaryButton(
-                label: 'Rate Driver',
-                icon: Icons.arrow_forward,
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => RateDriverScreen(
-                      rideId: widget.rideId,
-                      driverName: widget.driverName,
+              ] else ...[
+                AppPrimaryButton(
+                  label: 'Rate Driver',
+                  icon: Icons.arrow_forward,
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => RateDriverScreen(
+                        rideId: widget.rideId,
+                        driverName: widget.driverName,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const RiderHomeShell(),
-                    ),
-                    (route) => false,
-                  );
-                },
-                child: const Text('Back to Home'),
-              ),
+              ],
             ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

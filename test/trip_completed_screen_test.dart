@@ -30,7 +30,8 @@ void main() {
     expect(find.text('Tersoo Tyokyaa'), findsOneWidget);
     expect(find.text('CARD (PAYSTACK)'), findsOneWidget);
     expect(find.text('Rate Driver'), findsOneWidget);
-    expect(find.text('Back to Home'), findsOneWidget);
+    // Verified: Back to Home link and back button removed for forward-only flow
+    expect(find.text('Back to Home'), findsNothing);
   });
 
   testWidgets('TripCompletedScreen displays pending payment state and Pay button', (tester) async {
@@ -52,6 +53,8 @@ void main() {
 
     expect(find.text('Payment Pending'), findsOneWidget);
     expect(find.text('Pay ₦3200 via Paystack'), findsOneWidget);
+    // Verified: Rate Driver is hidden until payment is completed
+    expect(find.text('Rate Driver'), findsNothing);
     expect(find.text('Trip #VR-90210'), findsNothing);
   });
 }
