@@ -62,13 +62,16 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute<void>(
-              builder: (_) => const RiderHomeShell(initialIndex: 1)),
-          (route) => false,
-        );
+        _navigateToDashboard();
       }
     }
+  }
+
+  void _navigateToDashboard() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const RiderHomeShell()),
+      (route) => false,
+    );
   }
 
   @override
@@ -79,25 +82,15 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: AppBackButton(
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            } else {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute<void>(
-                  builder: (_) => const RiderHomeShell(),
-                ),
-                (route) => false,
-              );
-            }
-          },
+          onPressed: _navigateToDashboard,
         ),
         title: const Text('Victoria'),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: Icon(Icons.help_outline, color: AppColors.onSurfaceVariant),
+        actions: [
+          TextButton(
+            onPressed: _navigateToDashboard,
+            child: const Text('Skip', style: TextStyle(fontWeight: FontWeight.w700)),
           ),
+          const SizedBox(width: 8),
         ],
       ),
       resizeToAvoidBottomInset: true,
@@ -190,6 +183,11 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                 icon: Icons.send,
                 loading: _isSubmitting,
                 onPressed: _rating > 0 ? _submitRating : null,
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: _navigateToDashboard,
+                child: const Text('Skip Rating & Return to Dashboard'),
               ),
             ],
           ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vtrides/features/ride/presentation/screens/rate_driver_screen.dart';
 import 'package:vtrides/features/ride/presentation/screens/trip_completed_screen.dart';
 
 void main() {
@@ -30,6 +31,7 @@ void main() {
     expect(find.text('Tersoo Tyokyaa'), findsOneWidget);
     expect(find.text('CARD (PAYSTACK)'), findsOneWidget);
     expect(find.text('Rate Driver'), findsOneWidget);
+    expect(find.text('Skip & Return to Dashboard'), findsOneWidget);
     // Verified: Back to Home link and back button removed for forward-only flow
     expect(find.text('Back to Home'), findsNothing);
   });
@@ -72,5 +74,25 @@ void main() {
     await tester.tap(find.byIcon(Icons.close));
     await tester.pumpAndSettle();
     expect(find.text('Ride Payment'), findsNothing);
+  });
+
+  testWidgets('RateDriverScreen provides Skip rating button to terminate flow directly to Dashboard', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: RateDriverScreen(
+          rideId: 'VR-90210',
+          driverName: 'Tersoo Tyokyaa',
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Victoria'), findsOneWidget);
+    expect(find.text('How was your ride with Tersoo?'), findsOneWidget);
+    expect(find.text('Submit Rating'), findsOneWidget);
+    // Rating is strictly optional: Skip is available both in AppBar and body
+    expect(find.text('Skip'), findsOneWidget);
+    expect(find.text('Skip Rating & Return to Dashboard'), findsOneWidget);
   });
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_primary_button.dart';
+import '../../../rider/presentation/screens/rider_home_shell.dart';
 import '../widgets/ride_payment_sheet.dart';
 import 'rate_driver_screen.dart';
 
@@ -336,7 +337,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
               ] else ...[
                 AppPrimaryButton(
                   label: 'Rate Driver',
-                  icon: Icons.arrow_forward,
+                  icon: Icons.star_rate_rounded,
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => RateDriverScreen(
@@ -345,6 +346,18 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
                       ),
                     ),
                   ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const RiderHomeShell(),
+                      ),
+                      (route) => false,
+                    );
+                  },
+                  child: const Text('Skip & Return to Dashboard'),
                 ),
               ],
             ],
