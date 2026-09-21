@@ -86,16 +86,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _loadDashboardData() async {
     try {
       final res = await ApiClient.instance.get('/api/v1/rides/history?page=1&limit=3');
-      if (mounted) {
-        final data = res.data['data'] as List?;
-        if (data != null) {
-          final rides = data
-              .map((e) => RideHistoryItem.fromJson(e as Map<String, dynamic>))
-              .toList();
-          setState(() => _recentActivity = rides);
+      if (!mounted) return;
+      List<dynamic>? rawList;
+      if (res is Map<String, dynamic>) {
+        final dataField = res['data'];
+        if (dataField is List) {
+          rawList = dataField;
+        } else if (dataField is Map<String, dynamic>) {
+          rawList = (dataField['rides'] ?? dataField['items'] ?? dataField['history'] ?? dataField['data']) as List?;
+        } else {
+          rawList = (res['rides'] ?? res['items'] ?? res['history']) as List?;
         }
+      } else if (res is List) {
+        rawList = res;
       }
-    } catch (_) {}
+      if (rawList != null && rawList.isNotEmpty) {
+        final rides = <RideHistoryItem>[];
+        for (final e in rawList) {
+          if (e is Map<String, dynamic>) {
+            try { rides.add(RideHistoryItem.fromJson(e)); } catch (_) {}
+          } else if (e is Map) {
+            try { rides.add(RideHistoryItem.fromJson(Map<String, dynamic>.from(e))); } catch (_) {}
+          }
+        }
+        if (mounted) setState(() => _recentActivity = rides);
+      } else {
+        if (mounted) setState(() => _recentActivity = []);
+      }
+    } catch (e) {
+      debugPrint('[HomeScreen] _loadDashboardData error: $e');
+    }
   }
 
   String _getGreeting() {

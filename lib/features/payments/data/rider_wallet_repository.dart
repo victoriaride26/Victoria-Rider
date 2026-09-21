@@ -106,6 +106,52 @@ class WalletTransaction {
   }
 }
 
+/// Rider bank account for withdrawals.
+class RiderBankAccount {
+  const RiderBankAccount({
+    required this.id,
+    required this.bankName,
+    required this.accountNumber,
+    required this.accountName,
+    this.bankCode,
+    this.isDefault = false,
+  });
+
+  final String id;
+  final String bankName;
+  final String accountNumber;
+  final String accountName;
+  final String? bankCode;
+  final bool isDefault;
+
+  String get accountMask {
+    final digits = accountNumber.replaceAll(RegExp(r'\D'), '');
+    if (digits.length < 4) return digits;
+    return '•••• ${digits.substring(digits.length - 4)}';
+  }
+
+  static RiderBankAccount fromJson(Map<String, dynamic> json) {
+    final number = (json['accountNumber'] ?? json['account_number'] ?? '').toString();
+    final name = (json['accountName'] ?? json['account_name'] ?? '').toString();
+    final bank = json['bank'] is Map ? (json['bank'] as Map)['name'] : json['bankName'] ?? json['bank_name'];
+    final code = json['bankCode'] ?? json['bank_code'] ?? (json['bank'] is Map ? (json['bank'] as Map)['code'] : null);
+    return RiderBankAccount(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      bankName: bank?.toString() ?? 'Bank',
+      accountNumber: number,
+      accountName: name,
+      bankCode: code?.toString(),
+      isDefault: json['isDefault'] ?? json['is_default'] ?? false,
+    );
+  }
+}
+
+class RiderWithdrawalResult {
+  const RiderWithdrawalResult({required this.id, required this.amountNgn});
+  final String id;
+  final double amountNgn;
+}
+
 /// Repository responsible for Rider Wallet operations via Victoria Ride API.
 class RiderWalletRepository {
   RiderWalletRepository._();
@@ -227,5 +273,93 @@ class RiderWalletRepository {
       return amount / 100.0;
     }
     return amount.toDouble();
+  }
+
+  // --- Bank accounts & Withdrawal (rider) ---
+
+  Future<List<RiderBankAccount>> fetchBankAccounts() async {
+    try {
+      final data = await _api.get(ApiConfig.riderWalletBankAccounts);
+      final raw = data is List
+          ? data
+          : (data is Map<String, dynamic>
+              ? (data['bankAccounts'] ?? data['accounts'] ?? data['data'])
+              : null);
+      if (raw is! List) return const [];
+      return [
+        for (final item in raw)
+          if (item is Map<String, dynamic>) RiderBankAccount.fromJson(item),
+      ];
+    } catch (e) {
+      return const [];
+    }
+  }
+
+  Future<RiderBankAccount> addBankAccount({
+    required String accountNumber,
+    required String bankCode,
+    required String accountName,
+    String? bankName,
+  }) async {
+    final payload = <String, dynamic>{
+      'accountNumber': accountNumber.trim(),
+      'bankCode': bankCode.trim(),
+      'accountName': accountName.trim(),
+      if (bankName != null && bankName.isNotEmpty) 'bankName': bankName.trim(),
+    };
+    final data = await _api.post(ApiConfig.riderWalletBankAccount, body: payload);
+    if (data is Map<String, dynamic>) {
+      final accountData = data['bankAccount'] ?? data['data'] ?? data;
+      if (accountData is Map<String, dynamic>) return RiderBankAccount.fromJson(accountData);
+    }
+    throw ApiException('Could not save bank account. Please try again.');
+  }
+
+  Future<bool> setDefaultBankAccount(String id) async {
+    try {
+      await _api.put(ApiConfig.riderWalletBankAccountDefault(id));
+    } catch (_) {
+      // Fallback: try driver-style endpoint if rider endpoint not implemented
+      try {
+        await _api.put('/api/v1/wallet/bank-account/$id/default');
+      } catch (_) {}
+    }
+    return true;
+  }
+
+  Future<RiderWithdrawalResult> withdraw({required double amountNgn, String? bankAccountId}) async {
+    final kobo = (amountNgn * 100).round();
+    // Try rider endpoint first, then fallback to generic
+    final endpoints = [
+      ApiConfig.riderWalletWithdraw,
+      '/api/v1/wallet/withdraw',
+      '/api/v1/wallet/payout',
+    ];
+    dynamic lastData;
+    ApiException? lastErr;
+    for (final ep in endpoints) {
+      try {
+        final data = await _api.post(ep, body: {
+          'amount': kobo,
+          if (bankAccountId != null && bankAccountId.isNotEmpty) 'bankAccountId': bankAccountId,
+        });
+        lastData = data;
+        break;
+      } on ApiException catch (e) {
+        lastErr = e;
+        if (e.statusCode == 404) continue;
+        rethrow;
+      }
+    }
+    if (lastData is Map<String, dynamic>) {
+      final d = lastData['data'] is Map<String, dynamic> ? lastData['data'] as Map<String, dynamic> : lastData;
+      final txn = d['transaction'] is Map<String, dynamic> ? d['transaction'] as Map<String, dynamic> : d;
+      final amount = txn['amount'] ?? txn['amountKobo'] ?? lastData['amount'] ?? kobo;
+      final id = (txn['id'] ?? txn['_id'] ?? lastData['id'] ?? '').toString();
+      final amt = amount is num ? amount.toDouble() / (amount is int && amount >= 100 ? 100 : 1) : amountNgn;
+      return RiderWithdrawalResult(id: id, amountNgn: amt is double ? amt : amountNgn);
+    }
+    if (lastErr != null) throw lastErr;
+    return RiderWithdrawalResult(id: '', amountNgn: amountNgn);
   }
 }

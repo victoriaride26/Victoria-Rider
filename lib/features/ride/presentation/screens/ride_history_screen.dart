@@ -54,27 +54,84 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
       );
       if (!mounted) return;
 
-      final response = res.data is Map<String, dynamic>
-          ? res.data as Map<String, dynamic>
-          : const <String, dynamic>{};
-      final data = response['data'] as List?;
-      final meta = response['meta'] as Map<String, dynamic>?;
+      // ApiClient returns the decoded body directly (Map or List), not a Dio Response.
+      // Handle all backend shapes: {data:[...],meta:{}} , {data:{rides:[...]}} , [...] , {rides:[...]}.
+      Map<String, dynamic>? responseMap;
+      List<dynamic>? rawList;
+      Map<String, dynamic>? meta;
+
+      if (res is Map<String, dynamic>) {
+        responseMap = res;
+        // Try top-level list wrappers
+        final dataField = responseMap['data'];
+        if (dataField is List) {
+          rawList = dataField;
+          meta = responseMap['meta'] as Map<String, dynamic>?;
+        } else if (dataField is Map<String, dynamic>) {
+          rawList = (dataField['rides'] ??
+                  dataField['items'] ??
+                  dataField['history'] ??
+                  dataField['data']) as List?;
+          meta = (dataField['meta'] ?? responseMap['meta']) as Map<String, dynamic>?;
+          // If data is a map with pagination inside, also look there
+          if (rawList == null && dataField['data'] is List) {
+            rawList = dataField['data'] as List;
+          }
+        } else {
+          // Fallback: check alternative top-level keys
+          rawList = (responseMap['rides'] ??
+                  responseMap['items'] ??
+                  responseMap['history'] ??
+                  responseMap['results']) as List?;
+          meta = responseMap['meta'] as Map<String, dynamic>?;
+        }
+        // meta may also be under pagination / paging
+        meta ??= responseMap['pagination'] as Map<String, dynamic>?;
+        meta ??= (responseMap['data'] is Map<String, dynamic>
+            ? (responseMap['data'] as Map<String, dynamic>)['meta'] as Map<String, dynamic>?
+            : null);
+      } else if (res is List) {
+        rawList = res;
+      }
+
+      final data = rawList;
       if (data != null && data.isNotEmpty) {
-        setState(() {
-          _rides.addAll(
-            data
-                .map((e) => RideHistoryItem.fromJson(e as Map<String, dynamic>))
-                .toList(),
-          );
-          _page++;
-          _totalPages = (meta?['totalPages'] as num?)?.toInt() ?? _totalPages;
-          _hasMore = _page <= _totalPages;
-        });
+        final parsed = <RideHistoryItem>[];
+        for (final e in data) {
+          if (e is Map<String, dynamic>) {
+            try {
+              parsed.add(RideHistoryItem.fromJson(e));
+            } catch (_) {}
+          } else if (e is Map) {
+            try {
+              parsed.add(RideHistoryItem.fromJson(Map<String, dynamic>.from(e)));
+            } catch (_) {}
+          }
+        }
+        if (parsed.isNotEmpty) {
+          setState(() {
+            _rides.addAll(parsed);
+            _page++;
+            // Robust totalPages handling: meta may be at top or nested, and may be missing (fallback to hasMore based on page size)
+            final metaPages = (meta?['totalPages'] ?? meta?['total_pages'] ?? meta?['pages']) as num?;
+            if (metaPages != null) {
+              _totalPages = metaPages.toInt();
+              _hasMore = _page <= _totalPages;
+            } else {
+              // If backend doesn't send meta, assume more if we got full page (10)
+              _hasMore = parsed.length >= 10;
+              if (!_hasMore) _totalPages = _page - 1;
+            }
+          });
+        } else {
+          setState(() => _hasMore = false);
+        }
       } else {
         setState(() => _hasMore = false);
       }
-    } catch (_) {
-      // Ignore
+    } catch (e) {
+      debugPrint('[RideHistory] _loadMore error: $e');
+      if (mounted) setState(() => _hasMore = false);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -384,32 +441,51 @@ class RideHistoryItem {
   });
 
   factory RideHistoryItem.fromJson(Map<String, dynamic> json) {
-    // Parse kobo to Naira
-    final payment = json['ridePayment'] is Map
-        ? json['ridePayment'] as Map
-        : null;
-    final rawFare = json['fare'] ?? json['estimatedFare'] ?? 0;
+    // Handle nested wrappers: {data:{ride:{}}} or {ride:{}}.
+    Map<String, dynamic> j = json;
+    if (j['data'] is Map<String, dynamic> && j['data']['ride'] is Map) {
+      j = Map<String, dynamic>.from((j['data']['ride'] as Map));
+    } else if (j['ride'] is Map) {
+      j = Map<String, dynamic>.from(j['ride'] as Map);
+    } else if (j['data'] is Map<String, dynamic> && j['data'].containsKey('status')) {
+      j = Map<String, dynamic>.from(j['data'] as Map);
+    }
+
+    // Parse kobo to Naira — handle nested fare objects and flat fields
+    final payment = j['ridePayment'] is Map ? j['ridePayment'] as Map : null;
+    final fareObj = j['fare'];
+    final rawFare = fareObj is Map
+        ? (fareObj['finalAmount'] ?? fareObj['grossFare'] ?? fareObj['estimatedFare'] ?? fareObj['amount'] ?? fareObj['total'] ?? fareObj['fare'] ?? 0)
+        : (j['fare'] ?? j['estimatedFare'] ?? j['estimated_fare'] ?? j['fareAmount'] ?? j['amount'] ?? 0);
     final fare = _parseKobo(rawFare) / 100;
     final settled = payment == null
         ? null
-        : _parseKobo(payment['finalAmount'] ?? payment['grossFare']) / 100;
+        : _parseKobo(payment['finalAmount'] ?? payment['grossFare'] ?? payment['amount']) / 100;
 
+    // Address resolution with all known keys
+    final pickupAddr = j['pickupAddress']?.toString() ??
+        j['pickup_address']?.toString() ??
+        (j['pickupLocation'] is Map ? (j['pickupLocation'] as Map)['address']?.toString() : null) ??
+        (j['pickup'] is Map ? (j['pickup'] as Map)['address']?.toString() : null) ??
+        j['origin']?.toString() ??
+        '';
+    final dropoffAddr = j['dropoffAddress']?.toString() ??
+        j['dropoff_address']?.toString() ??
+        (j['dropoffLocation'] is Map ? (j['dropoffLocation'] as Map)['address']?.toString() : null) ??
+        (j['dropoff'] is Map ? (j['dropoff'] as Map)['address']?.toString() : null) ??
+        j['destination']?.toString() ??
+        '';
+
+    // createdAt fallback: created_at, timestamp, date
+    final createdStr = j['createdAt']?.toString() ?? j['created_at']?.toString() ?? j['timestamp']?.toString() ?? j['date']?.toString();
     return RideHistoryItem(
-      id: json['id']?.toString() ?? '',
-      status: json['status']?.toString() ?? 'UNKNOWN',
-      createdAt:
-          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
-          DateTime.now(),
+      id: (j['id'] ?? j['_id'] ?? j['rideId'] ?? '').toString(),
+      status: j['status']?.toString() ?? 'UNKNOWN',
+      createdAt: DateTime.tryParse(createdStr ?? '') ?? DateTime.now(),
       fareNgn: fare,
       settledFareNgn: settled,
-      pickupAddress:
-          json['pickupAddress']?.toString() ??
-          json['pickupLocation']?['address']?.toString() ??
-          '',
-      dropoffAddress:
-          json['dropoffAddress']?.toString() ??
-          json['dropoffLocation']?['address']?.toString() ??
-          '',
+      pickupAddress: pickupAddr.trim(),
+      dropoffAddress: dropoffAddr.trim(),
     );
   }
 

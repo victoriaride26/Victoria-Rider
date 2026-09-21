@@ -284,6 +284,33 @@ class ApiClient {
     }
   }
 
+  Future<dynamic> put(
+    String url, {
+    Object? body,
+    Map<String, String>? headers,
+    String? token,
+  }) async {
+    try {
+      return _handle(
+        await _run(
+          () => _http
+              .put(
+                Uri.parse(url),
+                headers: _authorizedHeaders(
+                  url: url,
+                  token: token,
+                  extraHeaders: headers,
+                ),
+                body: body == null ? null : jsonEncode(body),
+              )
+              .timeout(_timeout),
+        ),
+      );
+    } on SocketException {
+      throw ApiException('No internet connection. Please try again.');
+    }
+  }
+
   /// Multipart request used by KYC document and driver-profile updates.
   ///
   /// When [fileBytes] is provided it is attached as [fileField]; [parts]

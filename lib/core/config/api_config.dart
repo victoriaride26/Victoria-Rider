@@ -54,6 +54,11 @@ abstract final class ApiConfig {
   static String riderWalletFundVerify(String reference) =>
       '$apiV1/wallet/fund/verify/$reference';
   static const String riderWalletTransactions = '$apiV1/wallet/transactions';
+  static const String riderWalletBankAccount = '$apiV1/wallet/bank-account';
+  static const String riderWalletBankAccounts = '$apiV1/wallet/bank-accounts';
+  static String riderWalletBankAccountDefault(String id) =>
+      '$apiV1/wallet/bank-account/$id/default';
+  static const String riderWalletWithdraw = '$apiV1/wallet/withdraw';
 
   // --- Rides ---
   static const String rideEstimate = '$apiV1/rides/estimate';

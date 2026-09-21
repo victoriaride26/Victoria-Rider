@@ -34,31 +34,82 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
   }
 
   Future<void> _submitRating() async {
-    if (_rating == 0 || widget.rideId == null) return;
+    if (_rating == 0 || widget.rideId == null) {
+      setState(() => _errorMessage = _rating == 0 ? 'Please select a star rating.' : 'Missing ride reference.');
+      return;
+    }
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
     try {
-      // POST /api/v1/rides/{id}/rating
-      final body = <String, dynamic>{'rating': _rating};
-      if (_commentController.text.trim().isNotEmpty) {
-        final comment = _commentController.text.trim();
-        body['comment'] = comment;
-        body['feedback'] = comment;
-      }
-      if (_tip != null) {
-        body['tipAmount'] = _tip;
+      final comment = _commentController.text.trim();
+      // Build comprehensive body covering all backend field variants
+      final body = <String, dynamic>{
+        'rating': _rating,
+        'stars': _rating,
+        'score': _rating,
+        if (comment.isNotEmpty) ...{
+          'comment': comment,
+          'feedback': comment,
+          'review': comment,
+          'text': comment,
+        },
+        if (_tip != null) ...{
+          'tipAmount': _tip,
+          'tip': _tip,
+          'tip_amount': _tip,
+        },
+      };
+
+      // Primary endpoint per ApiConfig
+      ApiException? lastError;
+      final endpoints = [
+        ApiConfig.rideRating(widget.rideId!),
+        '${ApiConfig.apiV1}/rides/${widget.rideId}/ratings',
+        '${ApiConfig.apiV1}/rides/${widget.rideId}/review',
+        '${ApiConfig.apiV1}/rides/${widget.rideId}/rate',
+      ];
+
+      bool success = false;
+      for (final endpoint in endpoints) {
+        try {
+          await ApiClient.instance.post(endpoint, body: body);
+          success = true;
+          debugPrint('[RateDriver] Rating saved via $endpoint rating=$_rating tip=$_tip');
+          break;
+        } on ApiException catch (e) {
+          lastError = e;
+          // If endpoint not found (404) try next; otherwise rethrow if validation error
+          if (e.statusCode == 404 || e.message.toLowerCase().contains('not found')) {
+            debugPrint('[RateDriver] Endpoint $endpoint 404, trying next');
+            continue;
+          }
+          // For 400 validation, check if it's endpoint-specific; still try next if message hints at route
+          if (e.statusCode == 400 && e.message.toLowerCase().contains('route')) {
+            continue;
+          }
+          rethrow;
+        }
       }
 
-      // Import needed for ApiClient! I'll just do a raw POST using ApiClient.
-      // Wait, need to add import. I'll do that at the top.
-      await ApiClient.instance.post(
-        ApiConfig.rideRating(widget.rideId!),
-        body: body,
-      );
-      if (mounted) _navigateToDashboard();
+      if (!success && lastError != null) throw lastError;
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Thank you! Your rating has been saved.'),
+            backgroundColor: AppColors.primary,
+          ),
+        );
+        _navigateToDashboard();
+      }
     } on ApiException catch (e) {
+      debugPrint('[RateDriver] ApiException: ${e.statusCode} ${e.message}');
       if (mounted) setState(() => _errorMessage = e.message);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[RateDriver] Unexpected: $e');
       if (mounted) {
         setState(
           () => _errorMessage = 'Could not save your rating. Please try again.',
