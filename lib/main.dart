@@ -7,6 +7,7 @@ import 'core/constants/app_constants.dart';
 import 'core/services/background_location_service.dart';
 import 'core/services/fcm_service.dart';
 import 'core/services/notification_tray_service.dart';
+import 'core/services/places_storage_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/screens/splash_screen.dart';
 
@@ -37,6 +38,8 @@ Future<void> main() async {
 
   // Warm up background location permission check without starting tracking.
   unawaited(BackgroundLocationService.instance.ensurePermission());
+
+  await PlacesStorageService.instance.init();
 
   runApp(const VTRidesApp());
 }

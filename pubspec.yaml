@@ -33,6 +33,7 @@ dependencies:
   socket_io_client: ^3.0.2
   firebase_core: ^4.14.0
   firebase_messaging: ^16.6.0
+  pay_with_paystack: ^1.7.0
 
 dev_dependencies:
   flutter_test:

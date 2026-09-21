@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../payments/data/rider_wallet_repository.dart';
@@ -15,50 +16,72 @@ class RideHistoryScreen extends StatefulWidget {
 }
 
 class _RideHistoryScreenState extends State<RideHistoryScreen> {
+  final _scrollController = ScrollController();
   int _tab = 0;
   bool _loading = false;
-  List<WalletTransaction> _allTransactions = [];
+  bool _hasMore = true;
+  int _page = 1;
+  final List<RideHistoryItem> _rides = [];
 
   static const List<String> _tabs = ['All', 'Completed', 'Cancelled'];
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadMore();
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent - 200) {
+        _loadMore();
+      }
+    });
   }
 
-  Future<void> _loadData() async {
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || !_hasMore) return;
     if (!mounted) return;
     setState(() => _loading = true);
 
     try {
-      final txns = await RiderWalletRepository.instance.getTransactions();
+      final res = await ApiClient.instance
+          .get('/api/v1/rides/history?page=$_page&limit=10');
       if (!mounted) return;
-      setState(() {
-        _allTransactions = txns;
-        _loading = false;
-      });
+
+      final data = res.data['data'] as List?;
+      if (data != null && data.isNotEmpty) {
+        setState(() {
+          _rides.addAll(
+            data.map((e) => RideHistoryItem.fromJson(e as Map<String, dynamic>)).toList(),
+          );
+          _page++;
+          if (data.length < 10) _hasMore = false;
+        });
+      } else {
+        setState(() => _hasMore = false);
+      }
     } catch (_) {
-      if (!mounted) return;
-      setState(() => _loading = false);
+      // Ignore
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  List<WalletTransaction> get _filteredRides {
-    // Filter transactions to ride events (or all transactions if user has only general transactions)
-    final rides = _allTransactions.where((t) {
+  List<RideHistoryItem> get _filteredRides {
+    return _rides.where((r) {
       if (_tab == 1) {
-        return t.status.toUpperCase().contains('SUCCESS') ||
-            t.status.toUpperCase().contains('COMPLETE');
+        return r.status.toUpperCase().contains('COMPLET');
       }
       if (_tab == 2) {
-        return t.status.toUpperCase().contains('CANCEL') ||
-            t.status.toUpperCase().contains('FAIL');
+        return r.status.toUpperCase().contains('CANCEL');
       }
       return true;
     }).toList();
-
-    return rides;
   }
 
   String _formatCurrency(double amount) {
@@ -75,8 +98,14 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
       body: SafeArea(
         child: RefreshIndicator(
           color: AppColors.primary,
-          onRefresh: _loadData,
+          onRefresh: () async {
+            _page = 1;
+            _hasMore = true;
+            _rides.clear();
+            await _loadMore();
+          },
           child: ListView(
+            controller: _scrollController,
             padding: const EdgeInsets.all(24),
             physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
@@ -157,18 +186,12 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: r.isCredit
-                                ? AppColors.primary.withValues(alpha: 0.1)
-                                : AppColors.surfaceContainerLow,
+                            color: AppColors.surfaceContainerLow,
                             shape: BoxShape.circle,
                           ),
-                          child: Icon(
-                            r.isCredit
-                                ? Icons.account_balance_wallet
-                                : Icons.directions_car,
-                            color: r.isCredit
-                                ? AppColors.primary
-                                : AppColors.onSurfaceVariant,
+                          child: const Icon(
+                            Icons.directions_car,
+                            color: AppColors.onSurfaceVariant,
                             size: 20,
                           ),
                         ),
@@ -186,7 +209,9 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                r.title,
+                                r.dropoffAddress.isNotEmpty ? r.dropoffAddress : 'Dropoff',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14,
@@ -219,13 +244,11 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                           ),
                         ),
                         Text(
-                          '${r.isCredit ? '+' : '-'}${_formatCurrency(r.amountNgn)}',
-                          style: TextStyle(
+                          '₦${_formatCurrency(r.fareNgn)}',
+                          style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
-                            color: r.isCredit
-                                ? AppColors.primary
-                                : AppColors.onSurface,
+                            color: AppColors.onSurface,
                           ),
                         ),
                       ],
@@ -301,10 +324,50 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                   ),
                 ),
               ],
+              if (_hasMore && _rides.isNotEmpty)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class RideHistoryItem {
+  final String id;
+  final String status;
+  final DateTime createdAt;
+  final double fareNgn;
+  final String pickupAddress;
+  final String dropoffAddress;
+
+  const RideHistoryItem({
+    required this.id,
+    required this.status,
+    required this.createdAt,
+    required this.fareNgn,
+    required this.pickupAddress,
+    required this.dropoffAddress,
+  });
+
+  factory RideHistoryItem.fromJson(Map<String, dynamic> json) {
+    // Parse kobo to Naira
+    final rawFare = json['fare'] ?? json['estimatedFare'] ?? 0;
+    final fare = rawFare is num ? rawFare.toDouble() / 100 : 0.0;
+
+    return RideHistoryItem(
+      id: json['id']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'UNKNOWN',
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
+      fareNgn: fare,
+      pickupAddress: json['pickupAddress']?.toString() ?? json['pickupLocation']?['address']?.toString() ?? '',
+      dropoffAddress: json['dropoffAddress']?.toString() ?? json['dropoffLocation']?['address']?.toString() ?? '',
     );
   }
 }

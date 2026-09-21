@@ -76,7 +76,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
 
   bool get _isWalletInsufficient {
     if (_walletBalance == null || _estimate == null) return false;
-    return _walletBalance! < _adjustedFare;
+    return _walletBalance! < _currentFare;
   }
 
   void _selectPayment(String paymentId) {
@@ -92,12 +92,24 @@ class _RideRequestSheetState extends State<RideRequestSheet>
   }
 
   static const _vehicles = [
-    _VehicleOption('standard', Icons.directions_car, 'VT Standard',
-        'Comfortable everyday ride'),
-    _VehicleOption('premium', Icons.airline_seat_recline_extra, 'VT Premium',
-        'Premium, quieter ride'),
-    _VehicleOption('bike', Icons.two_wheeler, 'VT Bike',
-        'Quick, affordable motorbike'),
+    _VehicleOption(
+      'standard',
+      Icons.directions_car,
+      'VT Standard',
+      'Comfortable everyday ride',
+    ),
+    _VehicleOption(
+      'premium',
+      Icons.airline_seat_recline_extra,
+      'VT Premium',
+      'Premium, quieter ride',
+    ),
+    _VehicleOption(
+      'bike',
+      Icons.two_wheeler,
+      'VT Bike',
+      'Quick, affordable motorbike',
+    ),
   ];
 
   /// Payment channels available on the request screen.
@@ -108,12 +120,8 @@ class _RideRequestSheetState extends State<RideRequestSheet>
     _PayOption('transfer', Icons.swap_horiz_rounded, 'Transfer'),
   ];
 
-  /// Fare multipliers per vehicle tier (mirrors backend pricing rules).
-  static const _fareMultipliers = {
-    'standard': 1.0,
-    'premium': 1.5,
-    'bike': 0.5,
-  };
+  /// Cached backend estimates per vehicle tier (strictly backend calculation).
+  final Map<String, RideEstimate> _vehicleEstimates = {};
 
   @override
   void initState() {
@@ -151,15 +159,16 @@ class _RideRequestSheetState extends State<RideRequestSheet>
     super.dispose();
   }
 
-  Future<void> _loadEstimate() async {
+  Future<void> _loadEstimate({String? targetVehicle}) async {
+    final vehicle = targetVehicle ?? _selectedVehicle;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final pickup = widget.currentLocation;
-      final pickupLatLng = pickup?.position ??
-          const LatLng(7.7322, 8.5245); // Wurukum fallback
+      final pickupLatLng =
+          pickup?.position ?? const LatLng(7.7322, 8.5245); // Wurukum fallback
       final pickupLabel = pickup?.shortLabel ?? 'Current Location';
 
       final est = await _service.estimate(
@@ -167,23 +176,54 @@ class _RideRequestSheetState extends State<RideRequestSheet>
         pickupLabel: pickupLabel,
         destination: widget.destination.location,
         destinationLabel: widget.destination.shortName,
-        vehicleType: _selectedVehicle,
+        vehicleType: vehicle,
       );
       if (mounted) {
         setState(() {
-          _estimate = est;
+          _vehicleEstimates[vehicle] = est;
+          if (_selectedVehicle == vehicle) {
+            _estimate = est;
+          }
           if (_selectedPayment == 'wallet' && _isWalletInsufficient) {
             _selectedPayment = 'cash';
             _showWalletNotice = false;
           }
         });
+
+        // Preload remaining tiers strictly from backend calculation
+        for (final v in _vehicles) {
+          if (v.id != vehicle && !_vehicleEstimates.containsKey(v.id)) {
+            _service
+                .estimate(
+                  pickup: pickupLatLng,
+                  pickupLabel: pickupLabel,
+                  destination: widget.destination.location,
+                  destinationLabel: widget.destination.shortName,
+                  vehicleType: v.id,
+                )
+                .then((otherEst) {
+                  if (mounted) {
+                    setState(() {
+                      _vehicleEstimates[v.id] = otherEst;
+                    });
+                  }
+                })
+                .catchError((_) {
+                  // Ignore background preload failures
+                });
+          }
+        }
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
       if (mounted) {
         final rawMsg = e.toString().replaceFirst('Exception: ', '');
-        setState(() => _error = rawMsg.isNotEmpty ? rawMsg : 'Could not load estimate.');
+        setState(
+          () => _error = rawMsg.isNotEmpty
+              ? rawMsg
+              : 'Estimated fare must be obtained from VT Rides.',
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -191,7 +231,19 @@ class _RideRequestSheetState extends State<RideRequestSheet>
   }
 
   Future<void> _confirm() async {
-    if (_estimate == null || _requesting) return;
+    if (_estimate == null || _estimate!.fareNgn <= 0 || _requesting) {
+      if (mounted && (_estimate == null || _estimate!.fareNgn <= 0)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Cannot request ride: Estimated fare must be obtained from VT Rides, otherwise ABORT.',
+            ),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      return;
+    }
 
     if (_selectedPayment == 'wallet' && _isWalletInsufficient) {
       setState(() {
@@ -282,6 +334,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
             pickupLabel: _estimate?.pickupLabel,
             destinationLabel: _estimate?.destinationLabel,
             fareNgn: _estimate?.fareNgn,
+            paymentMethod: _selectedPayment,
           ),
         ),
       );
@@ -321,29 +374,30 @@ class _RideRequestSheetState extends State<RideRequestSheet>
     final body = isServiceOff
         ? 'Your device\'s location services are turned off. Please enable them in Settings so we can find your exact pickup point.'
         : isForever
-            ? 'Location permission was permanently denied. Please open App Settings and grant location access so we can pick you up accurately.'
-            : 'We need your location to place your pickup pin on the map. Without it your driver won\'t know where to find you.';
-    final primaryLabel =
-        (isServiceOff || isForever) ? 'Open Settings' : 'Allow Location';
+        ? 'Location permission was permanently denied. Please open App Settings and grant location access so we can pick you up accurately.'
+        : 'We need your location to place your pickup pin on the map. Without it your driver won\'t know where to find you.';
+    final primaryLabel = (isServiceOff || isForever)
+        ? 'Open Settings'
+        : 'Allow Location';
     final primaryAction = isServiceOff
         ? () async {
             await Geolocator.openLocationSettings();
             if (mounted) Navigator.of(context).pop();
           }
         : isForever
-            ? () async {
-                await Geolocator.openAppSettings();
-                if (mounted) Navigator.of(context).pop();
-              }
-            : () async {
-                final permission = await Geolocator.requestPermission();
-                if (mounted) Navigator.of(context).pop();
-                // If the user just granted it, re-trigger confirm.
-                if (permission == LocationPermission.always ||
-                    permission == LocationPermission.whileInUse) {
-                  await _confirm();
-                }
-              };
+        ? () async {
+            await Geolocator.openAppSettings();
+            if (mounted) Navigator.of(context).pop();
+          }
+        : () async {
+            final permission = await Geolocator.requestPermission();
+            if (mounted) Navigator.of(context).pop();
+            // If the user just granted it, re-trigger confirm.
+            if (permission == LocationPermission.always ||
+                permission == LocationPermission.whileInUse) {
+              await _confirm();
+            }
+          };
 
     return showModalBottomSheet<void>(
       context: context,
@@ -411,7 +465,8 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.onPrimary,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
                 onPressed: primaryAction,
                 icon: Icon(
@@ -439,7 +494,8 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                   foregroundColor: AppColors.onSurfaceVariant,
                   side: const BorderSide(color: AppColors.surfaceContainerHigh),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
                 onPressed: () => Navigator.of(ctx).pop(),
                 child: const Text(
@@ -454,13 +510,10 @@ class _RideRequestSheetState extends State<RideRequestSheet>
     );
   }
 
-  double get _adjustedFare {
-    final base = _estimate?.fareNgn ?? 0;
-    return base * (_fareMultipliers[_selectedVehicle] ?? 1.0);
-  }
+  double get _currentFare => _estimate?.fareNgn ?? 0;
 
   String get _formattedFare =>
-      '₦${_adjustedFare.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
+      '₦${_currentFare.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
 
   @override
   Widget build(BuildContext context) {
@@ -532,7 +585,8 @@ class _RideRequestSheetState extends State<RideRequestSheet>
 
                   // ── Route summary card ──────────────────────────────────
                   _RouteCard(
-                    pickupLabel: widget.currentLocation?.shortLabel ??
+                    pickupLabel:
+                        widget.currentLocation?.shortLabel ??
                         'Current Location',
                     destinationLabel: widget.destination.shortName,
                   ),
@@ -543,7 +597,10 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                   if (_loading)
                     _EstimateLoading(pulse: _pulse)
                   else if (_error != null)
-                    _EstimateError(errorMessage: _error!, onRetry: _loadEstimate)
+                    _EstimateError(
+                      errorMessage: _error!,
+                      onRetry: _loadEstimate,
+                    )
                   else if (_estimate != null)
                     _EstimateBadges(
                       distanceKm: _estimate!.distanceKm,
@@ -566,21 +623,31 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                   ...List.generate(_vehicles.length, (i) {
                     final v = _vehicles[i];
                     final isSelected = _selectedVehicle == v.id;
-                    final multiplier = _fareMultipliers[v.id] ?? 1.0;
-                    final tierFare = (_estimate?.fareNgn ?? 0) * multiplier;
-                    final tierLabel = _estimate != null
-                        ? '₦${tierFare.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}'
-                        : '—';
+                    final tierEst = _vehicleEstimates[v.id];
+                    final tierLabel = tierEst != null
+                        ? '₦${tierEst.fareNgn.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}'
+                        : (isSelected && _loading
+                              ? 'Calculating...'
+                              : (isSelected && _estimate != null
+                                    ? _formattedFare
+                                    : '—'));
 
                     return GestureDetector(
                       onTap: () {
                         setState(() {
                           _selectedVehicle = v.id;
-                          if (_selectedPayment == 'wallet' && _isWalletInsufficient) {
+                          if (_vehicleEstimates.containsKey(v.id)) {
+                            _estimate = _vehicleEstimates[v.id];
+                          }
+                          if (_selectedPayment == 'wallet' &&
+                              _isWalletInsufficient) {
                             _selectedPayment = 'cash';
                             _showWalletNotice = false;
                           }
                         });
+                        if (!_vehicleEstimates.containsKey(v.id)) {
+                          _loadEstimate(targetVehicle: v.id);
+                        }
                       },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
@@ -648,8 +715,11 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                             ),
                             if (isSelected) ...[
                               const SizedBox(width: 6),
-                              const Icon(Icons.check_circle,
-                                  color: AppColors.primary, size: 18),
+                              const Icon(
+                                Icons.check_circle,
+                                color: AppColors.primary,
+                                size: 18,
+                              ),
                             ],
                           ],
                         ),
@@ -698,30 +768,33 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                                     }
                                   },
                                   child: AnimatedContainer(
-                                    duration:
-                                        const Duration(milliseconds: 180),
+                                    duration: const Duration(milliseconds: 180),
                                     height: 86,
                                     margin: EdgeInsets.only(
-                                        right: col == 0 ? 10 : 0),
+                                      right: col == 0 ? 10 : 0,
+                                    ),
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 8),
+                                      horizontal: 8,
+                                      vertical: 8,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: isWalletDisabled
                                           ? AppColors.surfaceContainerLow
-                                              .withValues(alpha: 0.5)
+                                                .withValues(alpha: 0.5)
                                           : isSelected
-                                              ? AppColors.primary
-                                                  .withValues(alpha: 0.08)
-                                              : AppColors.surfaceContainerLow,
+                                          ? AppColors.primary.withValues(
+                                              alpha: 0.08,
+                                            )
+                                          : AppColors.surfaceContainerLow,
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
                                         color: isWalletDisabled
-                                            ? AppColors.error
-                                                .withValues(alpha: 0.3)
+                                            ? AppColors.error.withValues(
+                                                alpha: 0.3,
+                                              )
                                             : isSelected
-                                                ? AppColors.primary
-                                                : AppColors
-                                                    .surfaceContainerHigh,
+                                            ? AppColors.primary
+                                            : AppColors.surfaceContainerHigh,
                                         width: isSelected ? 1.5 : 1,
                                       ),
                                     ),
@@ -733,10 +806,10 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                                           p.icon,
                                           color: isWalletDisabled
                                               ? AppColors.onSurfaceVariant
-                                                  .withValues(alpha: 0.35)
+                                                    .withValues(alpha: 0.35)
                                               : isSelected
-                                                  ? AppColors.primary
-                                                  : AppColors.onSurfaceVariant,
+                                              ? AppColors.primary
+                                              : AppColors.onSurfaceVariant,
                                           size: 22,
                                         ),
                                         const SizedBox(height: 3),
@@ -744,18 +817,20 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                                           p.label,
                                           style: theme.textTheme.labelMedium
                                               ?.copyWith(
-                                            color: isWalletDisabled
-                                                ? AppColors.onSurfaceVariant
-                                                    .withValues(alpha: 0.45)
-                                                : isSelected
+                                                color: isWalletDisabled
+                                                    ? AppColors.onSurfaceVariant
+                                                          .withValues(
+                                                            alpha: 0.45,
+                                                          )
+                                                    : isSelected
                                                     ? AppColors.primary
                                                     : AppColors
-                                                        .onSurfaceVariant,
-                                            fontWeight: isSelected
-                                                ? FontWeight.w700
-                                                : FontWeight.w500,
-                                            fontSize: 12,
-                                          ),
+                                                          .onSurfaceVariant,
+                                                fontWeight: isSelected
+                                                    ? FontWeight.w700
+                                                    : FontWeight.w500,
+                                                fontSize: 12,
+                                              ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
@@ -763,10 +838,13 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                                         if (isWalletDisabled)
                                           Container(
                                             padding: const EdgeInsets.symmetric(
-                                                horizontal: 5, vertical: 1.5),
+                                              horizontal: 5,
+                                              vertical: 1.5,
+                                            ),
                                             decoration: BoxDecoration(
-                                              color: AppColors.error
-                                                  .withValues(alpha: 0.12),
+                                              color: AppColors.error.withValues(
+                                                alpha: 0.12,
+                                              ),
                                               borderRadius:
                                                   BorderRadius.circular(4),
                                             ),
@@ -791,7 +869,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                                               color: isSelected
                                                   ? AppColors.primary
                                                   : AppColors.onSurfaceVariant
-                                                      .withValues(alpha: 0.7),
+                                                        .withValues(alpha: 0.7),
                                               fontWeight: FontWeight.w500,
                                             ),
                                             maxLines: 1,
@@ -812,7 +890,8 @@ class _RideRequestSheetState extends State<RideRequestSheet>
 
                   // ── Fund Wallet In-Sheet Notice Banner ───────────────────
                   if (_showWalletNotice &&
-                      (_selectedPayment == 'wallet' || _isWalletInsufficient)) ...[
+                      (_selectedPayment == 'wallet' ||
+                          _isWalletInsufficient)) ...[
                     _buildFundWalletNotice(theme),
                     const SizedBox(height: 16),
                   ],
@@ -824,12 +903,16 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                       color: AppColors.primary.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: AppColors.primary.withValues(alpha: 0.15)),
+                        color: AppColors.primary.withValues(alpha: 0.15),
+                      ),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.shield_outlined,
-                            color: AppColors.primary, size: 20),
+                        const Icon(
+                          Icons.shield_outlined,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
@@ -851,7 +934,9 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.errorContainer,
                         borderRadius: BorderRadius.circular(12),
@@ -861,8 +946,11 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.error_outline_rounded,
-                              color: AppColors.error, size: 20),
+                          const Icon(
+                            Icons.error_outline_rounded,
+                            color: AppColors.error,
+                            size: 20,
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
@@ -902,9 +990,12 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                         elevation: 0,
                       ),
                       onPressed:
-                          (_loading || _requesting || _estimate == null)
-                              ? null
-                              : _confirm,
+                          (_loading ||
+                              _requesting ||
+                              _estimate == null ||
+                              _estimate!.fareNgn <= 0)
+                          ? null
+                          : _confirm,
                       child: _requesting
                           ? const SizedBox(
                               width: 22,
@@ -912,7 +1003,8 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.5,
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white),
+                                  Colors.white,
+                                ),
                               ),
                             )
                           : Row(
@@ -1088,10 +1180,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                   onPressed: () => _selectPayment('cash'),
                   child: const Text(
                     'Use Cash',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -1108,10 +1197,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _RouteCard extends StatelessWidget {
-  const _RouteCard({
-    required this.pickupLabel,
-    required this.destinationLabel,
-  });
+  const _RouteCard({required this.pickupLabel, required this.destinationLabel});
 
   final String pickupLabel;
   final String destinationLabel;
@@ -1231,14 +1317,10 @@ class _EstimateBadges extends StatelessWidget {
           label: '${distanceKm.toStringAsFixed(1)} km',
         ),
         const SizedBox(width: 10),
-        _Badge(
-          icon: Icons.access_time,
-          label: '$durationMinutes min',
-        ),
+        _Badge(icon: Icons.access_time, label: '$durationMinutes min'),
         const Spacer(),
         Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: AppColors.primary,
             borderRadius: BorderRadius.circular(10),

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
 
 import '../../../../core/services/location_service.dart';
 import '../../../../core/models/geocoding_result.dart';
@@ -9,8 +8,11 @@ import '../../../../core/services/geoapify_geocoding_service.dart';
 import '../../../../core/services/mapbox_geocoding_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
+import '../../../../core/models/saved_place.dart';
+import '../../../../core/services/places_storage_service.dart';
 import '../../../rider/presentation/widgets/rider_scaffold.dart';
 import '../widgets/ride_request_sheet.dart';
+import 'add_saved_place_screen.dart';
 
 /// Indicates which point of the trip is currently being searched.
 enum SearchTarget { pickup, destination }
@@ -58,17 +60,8 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
 
   Timer? _debounce;
 
-  static const _savedPlaces = [
-    _StaticPlace(Icons.home, 'Home', 'N.O.K Complex, Benue'),
-    _StaticPlace(Icons.work, 'Office', 'Secretariat, Makurdi'),
-  ];
-
-  static const _recentPlaces = [
-    _StaticPlace(Icons.history, 'Benue State University',
-        'Main Campus Road, Makurdi'),
-    _StaticPlace(Icons.history, 'Tito Gate', 'High Level, Makurdi'),
-    _StaticPlace(Icons.history, 'Aper Aku Stadium', 'Police Barracks Road'),
-  ];
+  List<SavedPlace> _savedPlaces = [];
+  List<GeocodingResult> _recentPlaces = [];
 
   @override
   void initState() {
@@ -81,6 +74,14 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
     // Auto-focus after the frame is drawn for better UX.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
+    });
+    _loadStoredPlaces();
+  }
+
+  void _loadStoredPlaces() {
+    setState(() {
+      _savedPlaces = PlacesStorageService.instance.getSavedPlaces();
+      _recentPlaces = PlacesStorageService.instance.getRecentDestinations();
     });
   }
 
@@ -198,21 +199,13 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
         _focusNode.requestFocus();
       }
     } else {
+      PlacesStorageService.instance.addRecentDestination(result);
       showRideRequestSheet(
         context,
         destination: result,
         currentLocation: _currentPickup ?? widget.currentLocation,
       );
     }
-  }
-
-  void _selectStaticPlace(_StaticPlace place) {
-    final result = GeocodingResult(
-      placeName: place.subtitle,
-      shortName: place.title,
-      location: const LatLng(7.7337, 8.5211), // Makurdi center
-    );
-    _selectResult(result);
   }
 
   String get _pickupLabel {
@@ -553,12 +546,25 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
         ...List.generate(_savedPlaces.length, (i) {
           final p = _savedPlaces[i];
           return _ResultTile(
-            icon: p.icon,
-            title: p.title,
-            subtitle: p.subtitle,
-            onTap: () => _selectStaticPlace(p),
+            icon: p.type.icon,
+            title: p.type.label,
+            subtitle: p.shortName,
+            onTap: () => _selectResult(p.toGeocodingResult()),
           );
         }),
+        _ResultTile(
+          icon: Icons.add,
+          title: 'Add Saved Place',
+          subtitle: 'Save a new location',
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const AddSavedPlaceScreen(),
+              ),
+            );
+            _loadStoredPlaces();
+          },
+        ),
 
         const SizedBox(height: 8),
         _SectionHeader(
@@ -568,10 +574,10 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
         ...List.generate(_recentPlaces.length, (i) {
           final p = _recentPlaces[i];
           return _ResultTile(
-            icon: p.icon,
-            title: p.title,
-            subtitle: p.subtitle,
-            onTap: () => _selectStaticPlace(p),
+            icon: Icons.history,
+            title: p.shortName,
+            subtitle: p.placeName,
+            onTap: () => _selectResult(p),
           );
         }),
 
@@ -710,9 +716,4 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _StaticPlace {
-  const _StaticPlace(this.icon, this.title, this.subtitle);
-  final IconData icon;
-  final String title;
-  final String subtitle;
-}
+

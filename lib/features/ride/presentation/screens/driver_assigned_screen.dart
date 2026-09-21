@@ -16,6 +16,7 @@ import '../../../../core/widgets/driver_avatar.dart';
 import '../../../../core/widgets/mapbox_map_view.dart';
 import '../widgets/in_ride_chat_sheet.dart';
 import 'ride_in_progress_screen.dart';
+import '../../../rider/presentation/screens/rider_home_shell.dart';
 
 /// R-10 — Driver Assigned: active map tracking the driver en route to pickup.
 class DriverAssignedScreen extends StatefulWidget {
@@ -35,6 +36,7 @@ class DriverAssignedScreen extends StatefulWidget {
     this.destinationLabel,
     this.fareNgn,
     this.initialDriverLocation,
+    this.paymentMethod,
   });
 
   final String? rideId;
@@ -51,6 +53,7 @@ class DriverAssignedScreen extends StatefulWidget {
   final String? destinationLabel;
   final double? fareNgn;
   final LatLng? initialDriverLocation;
+  final String? paymentMethod;
 
   @override
   State<DriverAssignedScreen> createState() => _DriverAssignedScreenState();
@@ -183,7 +186,39 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
             destinationLatLng: widget.destinationLatLng,
             destinationLabel: widget.destinationLabel,
             fareNgn: widget.fareNgn,
+            paymentMethod: widget.paymentMethod,
+            pickupAddress: widget.pickupLabel,
+            dropoffAddress: widget.destinationLabel,
           ),
+        ),
+      );
+    } else if (status == 'CANCELLED' ||
+        status == 'CANCELED' ||
+        status == 'TERMINATED') {
+      _navigated = true;
+      _pollTimer?.cancel();
+      _statusSub?.cancel();
+      _locationSub?.cancel();
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Ride Cancelled'),
+          content: const Text('This ride has been cancelled.'),
+          actions: [
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const RiderHomeShell(),
+                  ),
+                  (r) => false,
+                );
+              },
+              child: const Text('OK'),
+            ),
+          ],
         ),
       );
     }
@@ -232,6 +267,42 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
     _statusSub?.cancel();
     _locationSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _handleBack() async {
+    final cancel = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel Ride?'),
+        content: const Text('Are you sure you want to cancel your ride? The driver is already on the way.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Yes, Cancel'),
+          ),
+        ],
+      ),
+    );
+    
+    if (cancel == true && mounted) {
+      if (widget.rideId != null) {
+        try {
+          await ApiClient.instance.post(ApiConfig.rideCancel(widget.rideId!));
+        } catch (_) {}
+      }
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => const RiderHomeShell(),
+          ),
+          (r) => false,
+        );
+      }
+    }
   }
 
   @override
@@ -315,22 +386,28 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
           )
         : _pickupPoint;
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: const AppBackButton(),
-        title: Text(_driverArrived ? 'Driver has arrived' : 'Driver en route'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              if (widget.rideId != null) {
-                _socket.subscribeToRideTracking(widget.rideId!);
-                _checkStatus();
-              }
-            },
-          ),
-        ],
-      ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: AppBackButton(onPressed: _handleBack),
+          title: Text(_driverArrived ? 'Driver has arrived' : 'Driver en route'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () {
+                if (widget.rideId != null) {
+                  _socket.subscribeToRideTracking(widget.rideId!);
+                  _checkStatus();
+                }
+              },
+            ),
+          ],
+        ),
       body: Column(
         children: [
           // ── Active Map with Live Moving Driver Marker ──
@@ -431,6 +508,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
                       children: [
                         DriverAvatar(
                           imageUrl: widget.driverProfileImage,
+                          driverName: name,
                           radius: 26,
                         ),
                         const SizedBox(width: 14),
@@ -546,6 +624,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
                             driverPhone: widget.driverPhone,
                             vehicleModel: vehicle,
                             plateNumber: plate,
+                            driverProfileImage: widget.driverProfileImage,
                             pickupLatLng: _pickupPoint,
                             destinationLatLng: widget.destinationLatLng,
                             destinationLabel: widget.destinationLabel,
@@ -561,6 +640,6 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 }

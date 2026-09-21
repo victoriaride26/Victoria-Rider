@@ -23,6 +23,7 @@ class SearchingForDriverScreen extends StatefulWidget {
     this.pickupLabel,
     this.destinationLabel,
     this.fareNgn,
+    this.paymentMethod,
   });
 
   /// The ride ID returned by the backend after creating the ride.
@@ -37,6 +38,7 @@ class SearchingForDriverScreen extends StatefulWidget {
   final String? pickupLabel;
   final String? destinationLabel;
   final double? fareNgn;
+  final String? paymentMethod;
 
   @override
   State<SearchingForDriverScreen> createState() =>
@@ -49,16 +51,35 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
   StreamSubscription<Map<String, dynamic>>? _stateSub;
   Timer? _pollTimer;
   Timer? _countdownTimer;
-  
+
   static const int _maxSearchSeconds = 120;
   int _secondsRemaining = _maxSearchSeconds;
   bool _searchTimedOut = false;
-  
+
   bool _navigated = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.fareNgn == null || widget.fareNgn! <= 0) {
+      debugPrint(
+        '[SearchingForDriverScreen] ABORT: Missing backend calculated fare.',
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Ride search aborted: Estimated fare must be obtained from VT Rides.',
+              ),
+              backgroundColor: AppColors.error,
+            ),
+          );
+          Navigator.of(context).pop();
+        }
+      });
+      return;
+    }
     if (widget.enableRealtime) {
       _initListeners();
     }
@@ -78,7 +99,9 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
       });
 
       _stateSub = _socket.onRideState.listen((data) {
-        final status = (data['status'] ?? data['state'])?.toString().toUpperCase();
+        final status = (data['status'] ?? data['state'])
+            ?.toString()
+            .toUpperCase();
         if (status == 'MATCHED' || status == 'ACCEPTED') {
           final incomingId = (data['rideId'] ?? data['id'])?.toString();
           if (incomingId == null || incomingId == widget.rideId) {
@@ -122,11 +145,14 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
   Future<void> _checkRideStatus() async {
     if (_navigated || widget.rideId == null) return;
     try {
-      final response = await ApiClient.instance
-          .get(ApiConfig.rideStatus(widget.rideId!));
+      final response = await ApiClient.instance.get(
+        ApiConfig.rideStatus(widget.rideId!),
+      );
       final decoded = response as Map<String, dynamic>?;
       final data = decoded?['data'] as Map<String, dynamic>? ?? decoded;
-      final status = (data?['status'] ?? data?['state'])?.toString().toUpperCase();
+      final status = (data?['status'] ?? data?['state'])
+          ?.toString()
+          .toUpperCase();
       if (status == 'MATCHED' ||
           status == 'ACCEPTED' ||
           status == 'ARRIVED' ||
@@ -145,24 +171,28 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
     _stateSub?.cancel();
 
     final driver = data['driver'] is Map ? data['driver'] as Map : null;
-    final vehicle =
-        driver?['vehicle'] is Map ? driver!['vehicle'] as Map : null;
-    final driverUser =
-        driver?['user'] is Map ? driver!['user'] as Map : null;
+    final vehicle = driver?['vehicle'] is Map
+        ? driver!['vehicle'] as Map
+        : null;
+    final driverUser = driver?['user'] is Map ? driver!['user'] as Map : null;
 
-    final driverName = driver?['name']?.toString() ??
+    final driverName =
+        driver?['name']?.toString() ??
         driver?['fullName']?.toString() ??
         (driverUser?['firstName'] != null
-            ? '${driverUser!['firstName']} ${driverUser['lastName'] ?? ''}'.trim()
+            ? '${driverUser!['firstName']} ${driverUser['lastName'] ?? ''}'
+                  .trim()
             : data['driverName']?.toString());
 
-    final driverPhone = driver?['phone']?.toString() ??
+    final driverPhone =
+        driver?['phone']?.toString() ??
         driver?['phoneNumber']?.toString() ??
         driverUser?['phone']?.toString() ??
         data['driverPhone']?.toString();
 
     LatLng? driverLocation;
-    final loc = driver?['location'] ?? driver?['coords'] ?? data['driverLocation'];
+    final loc =
+        driver?['location'] ?? driver?['coords'] ?? data['driverLocation'];
     if (loc is Map) {
       final lat = (loc['latitude'] ?? loc['lat']) as num?;
       final lng = (loc['longitude'] ?? loc['lng']) as num?;
@@ -171,7 +201,8 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
       }
     }
 
-    final rawProfileImage = driver?['profilePhoto']?.toString() ??
+    final rawProfileImage =
+        driver?['profilePhoto']?.toString() ??
         driver?['profilePhotoUrl']?.toString() ??
         driver?['avatar']?.toString() ??
         driver?['avatarUrl']?.toString() ??
@@ -181,8 +212,8 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
         driver?['imageUrl']?.toString() ??
         (driver?['profile'] is Map
             ? (driver!['profile']['profilePhoto']?.toString() ??
-                driver['profile']['avatar']?.toString() ??
-                driver['profile']['photoUrl']?.toString())
+                  driver['profile']['avatar']?.toString() ??
+                  driver['profile']['photoUrl']?.toString())
             : null) ??
         driverUser?['profilePhoto']?.toString() ??
         driverUser?['profilePhotoUrl']?.toString() ??
@@ -212,9 +243,14 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
               ? (driver?['rating'] ?? data['driverRating']).toDouble()
               : null,
           vehicleModel: vehicle != null
-              ? '${vehicle['make'] ?? ''} ${vehicle['model'] ?? ''}'.trim()
+              ? [
+                  vehicle['color']?.toString(),
+                  vehicle['make']?.toString(),
+                  vehicle['model']?.toString(),
+                ].where((s) => s != null && s.trim().isNotEmpty).join(' ')
               : data['vehicleModel']?.toString(),
-          plateNumber: vehicle?['plateNumber']?.toString() ??
+          plateNumber:
+              vehicle?['plateNumber']?.toString() ??
               data['plateNumber']?.toString(),
           driverProfileImage: driverProfileImage,
           etaMinutes: (data['etaMinutes'] ?? driver?['etaMinutes']) is num
@@ -224,8 +260,22 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
           destinationLatLng: widget.destinationLatLng,
           pickupLabel: widget.pickupLabel,
           destinationLabel: widget.destinationLabel,
-          fareNgn: widget.fareNgn,
+          fareNgn: () {
+            final f =
+                data['fare'] ?? data['estimatedFare'] ?? data['finalFare'];
+            if (f is num) return f > 10000 ? f.toDouble() / 100 : f.toDouble();
+            if (f is Map) {
+              final inner = f['estimatedFare'] ?? f['finalFare'] ?? f['amount'];
+              if (inner is num)
+                return inner > 10000
+                    ? inner.toDouble() / 100
+                    : inner.toDouble();
+            }
+            return widget.fareNgn;
+          }(),
           initialDriverLocation: driverLocation,
+          paymentMethod:
+              widget.paymentMethod ?? data['paymentMethod']?.toString(),
         ),
       ),
     );
@@ -304,8 +354,9 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
                       Text(
                         'No drivers accepted the request in time. Would you like to try again?',
                         textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: AppColors.onSurfaceVariant),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: AppColors.onSurfaceVariant,
+                        ),
                       ),
                       const SizedBox(height: 32),
                       AppPrimaryButton(
@@ -318,7 +369,9 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
                         onPressed: _cancelRide,
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size.fromHeight(48),
-                          side: const BorderSide(color: AppColors.outlineVariant),
+                          side: const BorderSide(
+                            color: AppColors.outlineVariant,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -353,7 +406,9 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
                             width: 90,
                             height: 90,
                             decoration: BoxDecoration(
-                              color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                              color: AppColors.primaryContainer.withValues(
+                                alpha: 0.5,
+                              ),
                               shape: BoxShape.circle,
                             ),
                             child: Center(
@@ -362,7 +417,9 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
                                 style: theme.textTheme.titleLarge?.copyWith(
                                   fontWeight: FontWeight.bold,
                                   color: AppColors.primary,
-                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
                                 ),
                               ),
                             ),
@@ -379,8 +436,9 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
                       Text(
                         'Notifying the closest drivers within 10km. Please hold on.',
                         textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: AppColors.onSurfaceVariant),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: AppColors.onSurfaceVariant,
+                        ),
                       ),
                       const SizedBox(height: 32),
                       AppPrimaryButton(

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/models/saved_place.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/services/places_storage_service.dart';
 import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../payments/data/rider_wallet_repository.dart';
@@ -36,12 +38,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   CurrentLocation? _currentLocation;
   bool _locationLoading = true;
 
+  List<SavedPlace> _savedPlaces = [];
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadDashboardData();
     _loadCurrentLocation();
+    _loadSavedPlaces();
+  }
+
+  void _loadSavedPlaces() {
+    setState(() {
+      _savedPlaces = PlacesStorageService.instance.getSavedPlaces();
+    });
   }
 
   @override
@@ -53,8 +64,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _currentLocation == null) {
-      _loadCurrentLocation();
+    if (state == AppLifecycleState.resumed) {
+      if (_currentLocation == null) _loadCurrentLocation();
+      _loadSavedPlaces();
     }
   }
 
@@ -85,16 +97,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (hour < 17) return 'Good afternoon';
     return 'Good evening';
   }
-
-  static const List<_SavedPlace> _savedPlaces = [
-    _SavedPlace(Icons.home_rounded, 'Home', 'High-Level, Makurdi'),
-    _SavedPlace(Icons.work_rounded, 'Work', 'Federal Secretariat, Makurdi'),
-    _SavedPlace(
-      Icons.shopping_bag_outlined,
-      'Modern Market',
-      'South-Bank, Makurdi',
-    ),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -577,13 +579,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     style: TextButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                     ),
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => DestinationSearchScreen(
-                          currentLocation: _currentLocation,
+                    onPressed: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const DestinationSearchScreen(
+                            initialTarget: SearchTarget.destination,
+                          ), // The search screen now has an "Add Saved Place" button
                         ),
-                      ),
-                    ),
+                      );
+                      _loadSavedPlaces();
+                    },
                     icon: const Icon(Icons.add, size: 16),
                     label: const Text(
                       'Add Place',
@@ -640,7 +645,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Icon(
-                                      place.icon,
+                                      place.type.icon,
                                       color: AppColors.primary,
                                       size: 18,
                                     ),
@@ -648,24 +653,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      place.label,
-                                      style: theme.textTheme.labelLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14,
-                                          ),
+                                      place.type.label,
+                                      style: theme.textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.onSurface,
+                                      ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 10),
                               Text(
-                                place.subtitle,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: AppColors.onSurfaceVariant,
-                                  fontSize: 11,
+                                place.shortName,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.onSurface,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -1013,11 +1017,4 @@ class _QuickServiceCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _SavedPlace {
-  const _SavedPlace(this.icon, this.label, this.subtitle);
-  final IconData icon;
-  final String label;
-  final String subtitle;
 }

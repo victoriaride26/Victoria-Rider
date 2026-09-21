@@ -43,7 +43,7 @@ class RideEstimate {
 ///  - Transport errors and non-2xx responses are surfaced as [ApiException].
 class RideRequestService {
   RideRequestService({DirectionsService? directions})
-      : _directions = directions ?? DirectionsService();
+    : _directions = directions ?? DirectionsService();
 
   final DirectionsService _directions;
 
@@ -55,14 +55,6 @@ class RideRequestService {
 
   // Enum normalisers
 
-  /// Returns a local fare multiplier for a given vehicle type (display only).
-  static double vehicleMultiplier(String vehicleType) =>
-      switch (vehicleType.toLowerCase()) {
-        'premium' => 1.5,
-        'bike' => 0.5,
-        _ => 1.0,
-      };
-
   /// Maps any vehicle-type string to the backend enum: STANDARD, PREMIUM, BIKE.
   static String normalizeVehicleType(String vehicleType) =>
       switch (vehicleType.toLowerCase()) {
@@ -72,21 +64,21 @@ class RideRequestService {
       };
 
   /// Maps any payment-method string to the backend enum: CASH, CARD, TRANSFER, WALLET.
-  static String normalizePaymentMethod(String paymentMethod) =>
-      switch (paymentMethod.toLowerCase()) {
-        'wallet' => 'WALLET',
+  static String normalizePaymentMethod(String method) =>
+      switch (method.toLowerCase()) {
         'card' => 'CARD',
         'transfer' => 'TRANSFER',
+        'wallet' => 'WALLET',
         _ => 'CASH',
       };
 
   // estimate
 
-  /// Fetches a [RideEstimate] for the given pickup to destination pair.
+  /// Fetches a [RideEstimate] for the given pickup to destination pair strictly
+  /// from the backend calculation (POST /api/v1/rides/estimate).
   ///
-  /// 1. Calls POST /api/v1/rides/estimate with required flat coordinates.
-  /// 2. If that succeeds and the response contains a fare, use it.
-  /// 3. Otherwise falls back to a local Directions API / straight-line calc.
+  /// If the backend calculation cannot be obtained or fails, it ABORTS with an exception.
+  /// Does NOT fall back to client-side formula or hardcoded defaults.
   Future<RideEstimate> estimate({
     required LatLng pickup,
     required String pickupLabel,
@@ -118,55 +110,72 @@ class RideRequestService {
 
     if (response is Map<String, dynamic>) {
       final data = response['data'] as Map<String, dynamic>? ?? response;
-      
-      // 1. Parse Fare
+
+      // 1. Parse Fare strictly from backend
       double? fare;
       final fareObj = data['fare'];
       if (fareObj is Map) {
-        final estRaw = fareObj['estimatedFare'] ?? fareObj['finalFare'];
+        final estRaw =
+            fareObj['estimatedFare'] ??
+            fareObj['finalFare'] ??
+            fareObj['amount'];
         if (estRaw != null) {
-          final parsed = double.tryParse(estRaw.toString().replaceAll(RegExp(r'[^\d.]'), ''));
-          if (parsed != null) fare = parsed / 100;
+          final parsed = double.tryParse(
+            estRaw.toString().replaceAll(RegExp(r'[^\d.]'), ''),
+          );
+          if (parsed != null) fare = parsed > 10000 ? parsed / 100 : parsed;
         }
       } else if (data['estimatedFare'] != null || fareObj != null) {
         final raw = data['estimatedFare'] ?? fareObj;
         if (raw is num) {
-          fare = raw.toDouble() / 100;
+          fare = raw.toDouble() > 10000 ? raw.toDouble() / 100 : raw.toDouble();
         } else {
-          final parsed = double.tryParse(raw.toString().replaceAll(RegExp(r'[^\d.]'), ''));
-          if (parsed != null) fare = parsed / 100;
+          final parsed = double.tryParse(
+            raw.toString().replaceAll(RegExp(r'[^\d.]'), ''),
+          );
+          if (parsed != null) fare = parsed > 10000 ? parsed / 100 : parsed;
         }
       }
 
-      if (fare != null) {
+      if (fare != null && fare > 0) {
         // 2. Parse Route (Distance & Duration)
         double? distance;
         int? duration;
 
         final routeObj = data['route'];
         if (routeObj is Map) {
-          final distRaw = routeObj['estimatedDistanceKm'] ?? routeObj['distanceKm'];
+          final distRaw =
+              routeObj['estimatedDistanceKm'] ?? routeObj['distanceKm'];
           if (distRaw is num) distance = distRaw.toDouble();
-          
-          final durRaw = routeObj['estimatedDurationMinutes'] ?? routeObj['durationMinutes'];
+
+          final durRaw =
+              routeObj['estimatedDurationMinutes'] ??
+              routeObj['durationMinutes'];
           if (durRaw is num) duration = durRaw.toInt();
         }
 
         // Fallbacks if not inside 'route'
         if (distance == null) {
-          final rootDist = data['estimatedDistance'] ?? data['distanceKm'] ?? data['distance'];
+          final rootDist =
+              data['estimatedDistance'] ??
+              data['distanceKm'] ??
+              data['distance'];
           if (rootDist is num) distance = rootDist.toDouble();
         }
         if (duration == null) {
-          final rootDur = data['estimatedDuration'] ?? data['durationMinutes'] ?? data['duration'];
+          final rootDur =
+              data['estimatedDuration'] ??
+              data['durationMinutes'] ??
+              data['duration'];
           if (rootDur is num) duration = rootDur.toInt();
         }
 
-        distance ??= const Distance().as(LengthUnit.Meter, pickup, destination) / 1000;
+        distance ??=
+            const Distance().as(LengthUnit.Meter, pickup, destination) / 1000;
         duration ??= ((distance / 30) * 60).ceil();
 
         debugPrint(
-          '[RideRequestService] Backend estimate: fare=NGN$fare dist=${distance.toStringAsFixed(1)} km dur=$duration min',
+          '[RideRequestService] Backend estimate verified: fare=NGN$fare dist=${distance.toStringAsFixed(1)} km dur=$duration min',
         );
 
         return RideEstimate(
@@ -180,7 +189,11 @@ class RideRequestService {
         );
       }
     }
-    throw Exception('Invalid estimate response from backend.');
+
+    // Must be obtained from VT Rides, otherwise ABORT
+    throw Exception(
+      'Estimated fare could not be obtained from VT Rides. Ride request aborted.',
+    );
   }
 
   // requestRide
@@ -199,10 +212,18 @@ class RideRequestService {
     required String paymentMethod,
     required String vehicleType,
   }) async {
+    if (estimate.fareNgn <= 0) {
+      throw Exception(
+        'Cannot request ride: Estimated fare must be obtained from VT Rides, otherwise ABORT.',
+      );
+    }
+
     final backendVehicle = normalizeVehicleType(vehicleType);
     final backendPayment = normalizePaymentMethod(paymentMethod);
 
-    debugPrint('[RideRequestService] Requesting ride: vehicle=$backendVehicle payment=$backendPayment pickup=${estimate.pickupLabel} drop=${estimate.destinationLabel}');
+    debugPrint(
+      '[RideRequestService] Requesting ride: vehicle=$backendVehicle payment=$backendPayment pickup=${estimate.pickupLabel} drop=${estimate.destinationLabel}',
+    );
 
     try {
       final response = await ApiClient.instance.post(
@@ -235,7 +256,8 @@ class RideRequestService {
       String? rideId;
       if (response is Map<String, dynamic>) {
         final data = response['data'] as Map<String, dynamic>? ?? response;
-        rideId = data['rideId']?.toString() ??
+        rideId =
+            data['rideId']?.toString() ??
             data['id']?.toString() ??
             data['_id']?.toString();
       }
@@ -251,7 +273,7 @@ class RideRequestService {
       debugPrint('  Status  : ${e.statusCode}');
       debugPrint('  Message : ${e.message}');
       if (e.errors != null) debugPrint('  Errors  : ${e.errors}');
-      if (e.data != null)   debugPrint('  Data    : ${e.data}');
+      if (e.data != null) debugPrint('  Data    : ${e.data}');
       debugPrint('══════════════════════════════════════════════');
       rethrow;
     } catch (e) {
@@ -260,4 +282,3 @@ class RideRequestService {
     }
   }
 }
-

@@ -115,6 +115,9 @@ class RiderSocketService {
   final StreamController<Map<String, dynamic>> _chatMessageController =
       StreamController<Map<String, dynamic>>.broadcast();
 
+  final StreamController<Map<String, dynamic>> _paymentPendingController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
   bool get isConnected => _isConnected;
 
   /// Stream of ride acceptance / match events when a driver accepts a request.
@@ -135,6 +138,10 @@ class RiderSocketService {
   /// Stream of real-time in-ride chat messages from the assigned driver.
   Stream<Map<String, dynamic>> get onChatMessage =>
       _chatMessageController.stream;
+
+  /// Stream of payment pending events (e.g. for card/transfer payment at trip end).
+  Stream<Map<String, dynamic>> get onPaymentPending =>
+      _paymentPendingController.stream;
 
   /// Connects to the backend Socket.IO server with the rider's JWT token.
   void connect() {
@@ -232,6 +239,13 @@ class RiderSocketService {
         }
       });
 
+      _socket!.on('ride:payment_pending', (data) {
+        debugPrint('[RiderSocket] Received ride:payment_pending: $data');
+        if (data is Map) {
+          _paymentPendingController.add(Map<String, dynamic>.from(data));
+        }
+      });
+
       // ── 3. Ride status updates ──
       _socket!.on('ride:status:update', (data) {
         debugPrint('[RiderSocket] Received ride:status:update: $data');
@@ -250,6 +264,32 @@ class RiderSocketService {
           _rideStateController.add(map);
         }
       });
+
+      // ── 3b. Ride termination and completion listeners ──
+      void handleTermination(dynamic data, String fallbackStatus) {
+        debugPrint('[RiderSocket] Received termination event: $data ($fallbackStatus)');
+        if (data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          if (map['status'] == null && map['state'] == null) {
+            map['status'] = fallbackStatus;
+          }
+          _statusUpdateController.add(map);
+          _rideStateController.add(map);
+        } else if (data != null) {
+          final map = {'rideId': data.toString(), 'status': fallbackStatus};
+          _statusUpdateController.add(map);
+          _rideStateController.add(map);
+        }
+      }
+
+      _socket!.on('ride:completed', (data) => handleTermination(data, 'COMPLETED'));
+      _socket!.on('ride:complete', (data) => handleTermination(data, 'COMPLETED'));
+      _socket!.on('ride:terminated', (data) => handleTermination(data, 'TERMINATED'));
+      _socket!.on('ride:terminate', (data) => handleTermination(data, 'TERMINATED'));
+      _socket!.on('ride:cancelled', (data) => handleTermination(data, 'CANCELLED'));
+      _socket!.on('ride:canceled', (data) => handleTermination(data, 'CANCELLED'));
+      _socket!.on('ride:ended', (data) => handleTermination(data, 'COMPLETED'));
+      _socket!.on('ride:end', (data) => handleTermination(data, 'COMPLETED'));
 
       // ── 4. Driver GPS coordinate streaming ──
       void handleLocationUpdate(dynamic data) {

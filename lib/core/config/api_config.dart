@@ -71,4 +71,9 @@ abstract final class ApiConfig {
   static const String locationsStates = '$apiV1/locations/states';
   static String locationsLgas(String stateId) =>
       '$apiV1/locations/states/$stateId/lgas';
+
+  // --- Paystack Configuration ---
+  static const String paystackSecretKey =
+      'sk_test_0d82954342fbe5763e46f13a3a4e460ecb14d99f';
+  static const String paystackBaseUrl = 'https://api.paystack.co';
 }
