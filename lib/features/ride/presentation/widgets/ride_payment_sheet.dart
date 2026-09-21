@@ -69,13 +69,15 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
   String? _currentReference;
   WebViewController? _webViewController;
   double? _pageProgress;
+  bool _verificationStarted = false;
 
   @override
   void initState() {
     super.initState();
     final m = (widget.paymentMethod ?? 'CARD').toUpperCase();
-    _selectedChannel =
-        m.contains('TRANSFER') ? _PaymentChannel.transfer : _PaymentChannel.card;
+    _selectedChannel = m.contains('TRANSFER')
+        ? _PaymentChannel.transfer
+        : _PaymentChannel.card;
   }
 
   String get _formattedFare {
@@ -89,15 +91,16 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
       _step = _PaymentStep.launching;
     });
 
-    final envKey = dotenv.env['PAYSTACK_SECRET_KEY'] ??
+    final envKey =
+        dotenv.env['PAYSTACK_SECRET_KEY'] ??
         dotenv.env['PAYSTACK_PUBLIC_KEY'] ??
         dotenv.env['PAYSTACK_KEY'];
     final key = (envKey != null && envKey.isNotEmpty)
         ? envKey
         : ApiConfig.paystackSecretKey;
 
-    final email = SessionController.instance.user?['email'] ??
-        'rider@victoriarides.com';
+    final email =
+        SessionController.instance.user?['email'] ?? 'rider@victoriarides.com';
     final ref =
         'VR_RIDE_${widget.rideId ?? DateTime.now().millisecondsSinceEpoch}_${DateTime.now().millisecondsSinceEpoch}';
     final amountKobo = (widget.fareNgn * 100).round();
@@ -159,6 +162,14 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
       _webViewController = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
         ..setBackgroundColor(Colors.white)
+        ..addJavaScriptChannel(
+          'PaystackChannel',
+          onMessageReceived: (message) {
+            if (message.message == 'success') {
+              _verifyPayment();
+            }
+          },
+        )
         ..setNavigationDelegate(
           NavigationDelegate(
             onProgress: (int progress) {
@@ -174,10 +185,13 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
                 setState(() => _pageProgress = null);
               }
               debugPrint('[PaystackWebView] Page finished: $url');
+              _injectSuccessObserver();
             },
             onNavigationRequest: (NavigationRequest request) {
               final url = request.url.toLowerCase();
-              debugPrint('[PaystackWebView] Navigation request: ${request.url}');
+              debugPrint(
+                '[PaystackWebView] Navigation request: ${request.url}',
+              );
               // Intercept Paystack completion, callback, or close URLs
               if (url.contains('standard.paystack.co/close') ||
                   url.contains('callback') ||
@@ -190,7 +204,9 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
               return NavigationDecision.navigate;
             },
             onWebResourceError: (WebResourceError error) {
-              debugPrint('[PaystackWebView] Resource Error: ${error.description}');
+              debugPrint(
+                '[PaystackWebView] Resource Error: ${error.description}',
+              );
             },
           ),
         )
@@ -200,9 +216,31 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
     }
   }
 
+  void _injectSuccessObserver() {
+    _webViewController?.runJavaScript('''
+      (function() {
+        if (window._victoriaPaystackObserverInstalled) return;
+        window._victoriaPaystackObserverInstalled = true;
+        var timer = setInterval(function() {
+          var body = document.body ? document.body.innerText.toLowerCase() : '';
+          if (body.includes('payment successful') ||
+              body.includes('transaction successful') ||
+              body.includes('payment complete') ||
+              document.querySelector('[data-status="success"]') !== null ||
+              document.querySelector('.status-success') !== null) {
+            clearInterval(timer);
+            PaystackChannel.postMessage('success');
+          }
+        }, 300);
+      })();
+    ''');
+  }
+
   Future<void> _verifyPayment() async {
+    if (_verificationStarted) return;
     final ref = _currentReference;
     if (ref == null || ref.isEmpty) return;
+    _verificationStarted = true;
 
     setState(() {
       _step = _PaymentStep.verifying;
@@ -223,12 +261,13 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
       }
 
       // 2. Query Paystack status for double confirmation
-      final envKey = dotenv.env['PAYSTACK_SECRET_KEY'] ??
+      final envKey =
+          dotenv.env['PAYSTACK_SECRET_KEY'] ??
           dotenv.env['PAYSTACK_PUBLIC_KEY'] ??
           dotenv.env['PAYSTACK_KEY'];
       final key = (envKey != null && envKey.isNotEmpty)
-        ? envKey
-        : ApiConfig.paystackSecretKey;
+          ? envKey
+          : ApiConfig.paystackSecretKey;
 
       final res = await http.get(
         Uri.parse('https://api.paystack.co/transaction/verify/$ref'),
@@ -236,7 +275,8 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
       );
 
       final data = jsonDecode(res.body);
-      final isSuccess = (data is Map &&
+      final isSuccess =
+          (data is Map &&
           data['status'] == true &&
           (data['data']?['status'] == 'success' ||
               data['data']?['gateway_response'] == 'Successful'));
@@ -247,13 +287,13 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
           _step = _PaymentStep.success;
         });
         widget.onPaymentConfirmed(true);
-        await Future.delayed(const Duration(milliseconds: 1200));
         if (mounted) Navigator.of(context).pop(true);
       } else {
         if (!mounted) return;
         setState(() {
           _step = _PaymentStep.select;
-          _errorMessage = data['data']?['gateway_response']?.toString() ??
+          _errorMessage =
+              data['data']?['gateway_response']?.toString() ??
               'Payment not completed or verified yet. Please try again.';
         });
       }
@@ -264,6 +304,7 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
         _errorMessage =
             'Could not verify payment yet. If you completed payment, please check your network and try again.';
       });
+      _verificationStarted = false;
     }
   }
 
@@ -358,7 +399,10 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
                         ],
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: AppColors.onSurfaceVariant),
+                        icon: const Icon(
+                          Icons.close,
+                          color: AppColors.onSurfaceVariant,
+                        ),
                         tooltip: 'Close',
                         onPressed: () => Navigator.of(context).pop(false),
                       ),
@@ -419,7 +463,11 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(Icons.person, size: 16, color: AppColors.primary),
+                    const Icon(
+                      Icons.person,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       'Driver: ${widget.driverName}',
@@ -452,7 +500,8 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
                 title: 'Card',
                 subtitle: 'Debit / Credit',
                 isSelected: _selectedChannel == _PaymentChannel.card,
-                onTap: () => setState(() => _selectedChannel = _PaymentChannel.card),
+                onTap: () =>
+                    setState(() => _selectedChannel = _PaymentChannel.card),
               ),
             ),
             const SizedBox(width: 12),
@@ -462,7 +511,8 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
                 title: 'Transfer',
                 subtitle: 'Bank Transfer',
                 isSelected: _selectedChannel == _PaymentChannel.transfer,
-                onTap: () => setState(() => _selectedChannel = _PaymentChannel.transfer),
+                onTap: () =>
+                    setState(() => _selectedChannel = _PaymentChannel.transfer),
               ),
             ),
           ],
@@ -562,11 +612,7 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
                 color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.lock,
-                size: 16,
-                color: AppColors.primary,
-              ),
+              child: const Icon(Icons.lock, size: 16, color: AppColors.primary),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -591,7 +637,11 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
             ),
             // Verify / Refresh button
             IconButton(
-              icon: const Icon(Icons.refresh, size: 20, color: AppColors.primary),
+              icon: const Icon(
+                Icons.refresh,
+                size: 20,
+                color: AppColors.primary,
+              ),
               tooltip: 'Check Status',
               onPressed: _verifyPayment,
             ),
@@ -637,12 +687,18 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
               TextButton.icon(
                 onPressed: _confirmCancelInAppGateway,
                 icon: const Icon(Icons.arrow_back, size: 14),
-                label: const Text('Change Method', style: TextStyle(fontSize: 12)),
+                label: const Text(
+                  'Change Method',
+                  style: TextStyle(fontSize: 12),
+                ),
               ),
               FilledButton.tonalIcon(
                 onPressed: _verifyPayment,
                 icon: const Icon(Icons.check, size: 14),
-                label: const Text('I Have Paid', style: TextStyle(fontSize: 12)),
+                label: const Text(
+                  'I Have Paid',
+                  style: TextStyle(fontSize: 12),
+                ),
               ),
             ],
           ),
@@ -782,7 +838,9 @@ class _ChannelTile extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: isSelected ? AppColors.primary : AppColors.onSurfaceVariant,
+              color: isSelected
+                  ? AppColors.primary
+                  : AppColors.onSurfaceVariant,
               size: 24,
             ),
             const SizedBox(width: 10),
@@ -794,7 +852,9 @@ class _ChannelTile extends StatelessWidget {
                     title,
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: isSelected ? AppColors.primary : AppColors.onSurface,
+                      color: isSelected
+                          ? AppColors.primary
+                          : AppColors.onSurface,
                       fontSize: 14,
                     ),
                   ),

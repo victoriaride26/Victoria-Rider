@@ -25,7 +25,8 @@ abstract final class ApiConfig {
 
   // --- Drivers / KYC ---
   static const String driverMe = '$apiV1/drivers/me';
-  static const String driverOnboardingStatus = '$apiV1/drivers/onboarding/status';
+  static const String driverOnboardingStatus =
+      '$apiV1/drivers/onboarding/status';
   static const String driverVehicles = '$apiV1/drivers/me/vehicles';
   static const String kycDocuments = '$apiV1/drivers/kyc/documents';
   static const String kycStatus = '$apiV1/drivers/kyc/status';
@@ -57,13 +58,13 @@ abstract final class ApiConfig {
   // --- Rides ---
   static const String rideEstimate = '$apiV1/rides/estimate';
   static const String rideRequest = '$apiV1/rides/request';
-  static String rideStatus(String rideId) =>
-      '$apiV1/rides/$rideId/status';
+  static String rideStatus(String rideId) => '$apiV1/rides/$rideId/status';
   static String rideAccept(String rideId) => '$apiV1/rides/$rideId/accept';
   static String rideArrive(String rideId) => '$apiV1/rides/$rideId/arrive';
   static String rideStart(String rideId) => '$apiV1/rides/$rideId/start';
   static String rideCancel(String rideId) => '$apiV1/rides/$rideId/cancel';
   static String rideComplete(String rideId) => '$apiV1/rides/$rideId/complete';
+  static String rideRating(String rideId) => '$apiV1/rides/$rideId/rating';
   static String rideChat(String rideId) => '$apiV1/rides/$rideId/chat';
 
   // --- Locations ---

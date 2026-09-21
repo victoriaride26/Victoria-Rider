@@ -317,13 +317,22 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
             method == 'WALLET');
 
     final fareRaw =
+        data['grossFare'] ??
         data['fare'] ??
         data['finalFare'] ??
         data['totalFare'] ??
-        data['grossFare'] ??
-        data['amount'] ??
-        widget.fareNgn;
-    final fare = fareRaw is num ? fareRaw.toDouble() : (widget.fareNgn ?? 0.0);
+        data['amount'];
+
+    double fare = widget.fareNgn ?? 0.0;
+    if (fareRaw is num) {
+      // Backend uses kobo in Paystack endpoints (100 kobo = 1 NGN).
+      // If integer >= 100, convert kobo to NGN.
+      if (fareRaw is int && fareRaw >= 100) {
+        fare = fareRaw / 100.0;
+      } else {
+        fare = fareRaw.toDouble();
+      }
+    }
 
     _navigateToSummary(fare: fare, isPaymentConfirmed: isPaymentConfirmed);
   }

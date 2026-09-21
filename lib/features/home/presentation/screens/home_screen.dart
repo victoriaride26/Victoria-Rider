@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/models/saved_place.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/places_storage_service.dart';
 import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../payments/data/rider_wallet_repository.dart';
 import '../../../ride/presentation/screens/destination_search_screen.dart';
+import '../../../ride/presentation/screens/ride_history_screen.dart';
 
 /// R-06 — Redesigned Rider Dashboard.
 ///
@@ -33,7 +34,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  List<WalletTransaction> _recentActivity = [];
+  List<RideHistoryItem> _recentActivity = [];
   final _locationService = LocationService();
   CurrentLocation? _currentLocation;
   bool _locationLoading = true;
@@ -84,9 +85,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _loadDashboardData() async {
     try {
-      final txns = await RiderWalletRepository.instance.getTransactions();
+      final res = await ApiClient.instance.get('/api/v1/rides/history?page=1&limit=3');
       if (mounted) {
-        setState(() => _recentActivity = txns);
+        final data = res.data['data'] as List?;
+        if (data != null) {
+          final rides = data
+              .map((e) => RideHistoryItem.fromJson(e as Map<String, dynamic>))
+              .toList();
+          setState(() => _recentActivity = rides);
+        }
       }
     } catch (_) {}
   }
@@ -726,18 +733,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: tx.isCredit
-                                ? AppColors.primary.withValues(alpha: 0.1)
-                                : AppColors.surfaceContainerLow,
+                            color: AppColors.surfaceContainerLow,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Icon(
-                            tx.isCredit
-                                ? Icons.account_balance_wallet
-                                : Icons.directions_car,
-                            color: tx.isCredit
-                                ? AppColors.primary
-                                : AppColors.onSurfaceVariant,
+                          child: const Icon(
+                            Icons.directions_car,
+                            color: AppColors.onSurfaceVariant,
                             size: 22,
                           ),
                         ),
@@ -747,7 +748,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                tx.title,
+                                tx.dropoffAddress.isNotEmpty ? tx.dropoffAddress : 'Dropoff',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14,
@@ -771,35 +772,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              '${tx.isCredit ? '+' : '-'}₦${tx.amountNgn.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                              style: TextStyle(
+                              '-₦${tx.fareNgn.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 15,
-                                color: tx.isCredit
-                                    ? AppColors.primary
-                                    : AppColors.onSurface,
+                                color: AppColors.onSurface,
                               ),
                             ),
                             const SizedBox(height: 2),
-                            if (!tx.isCredit)
-                              InkWell(
-                                onTap: () => Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (_) =>
-                                        const DestinationSearchScreen(
-                                          currentLocation: null,
-                                        ),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Rebook',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.primary,
-                                  ),
+                            InkWell(
+                              onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) =>
+                                      const DestinationSearchScreen(
+                                        currentLocation: null,
+                                      ),
                                 ),
                               ),
+                              child: const Text(
+                                'Rebook',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ],

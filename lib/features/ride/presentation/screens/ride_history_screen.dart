@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
-import '../../../payments/data/rider_wallet_repository.dart';
 import '../../../rider/presentation/widgets/rider_scaffold.dart';
 import 'destination_search_screen.dart';
 
@@ -21,6 +20,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
   bool _loading = false;
   bool _hasMore = true;
   int _page = 1;
+  int _totalPages = 1;
   final List<RideHistoryItem> _rides = [];
 
   static const List<String> _tabs = ['All', 'Completed', 'Cancelled'];
@@ -49,18 +49,26 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
     setState(() => _loading = true);
 
     try {
-      final res = await ApiClient.instance
-          .get('/api/v1/rides/history?page=$_page&limit=10');
+      final res = await ApiClient.instance.get(
+        '/api/v1/rides/history?page=$_page&limit=10',
+      );
       if (!mounted) return;
 
-      final data = res.data['data'] as List?;
+      final response = res.data is Map<String, dynamic>
+          ? res.data as Map<String, dynamic>
+          : const <String, dynamic>{};
+      final data = response['data'] as List?;
+      final meta = response['meta'] as Map<String, dynamic>?;
       if (data != null && data.isNotEmpty) {
         setState(() {
           _rides.addAll(
-            data.map((e) => RideHistoryItem.fromJson(e as Map<String, dynamic>)).toList(),
+            data
+                .map((e) => RideHistoryItem.fromJson(e as Map<String, dynamic>))
+                .toList(),
           );
           _page++;
-          if (data.length < 10) _hasMore = false;
+          _totalPages = (meta?['totalPages'] as num?)?.toInt() ?? _totalPages;
+          _hasMore = _page <= _totalPages;
         });
       } else {
         setState(() => _hasMore = false);
@@ -100,6 +108,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
           color: AppColors.primary,
           onRefresh: () async {
             _page = 1;
+            _totalPages = 1;
             _hasMore = true;
             _rides.clear();
             await _loadMore();
@@ -209,7 +218,9 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                r.dropoffAddress.isNotEmpty ? r.dropoffAddress : 'Dropoff',
+                                r.dropoffAddress.isNotEmpty
+                                    ? r.dropoffAddress
+                                    : 'Dropoff',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
@@ -220,10 +231,15 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                               const SizedBox(height: 4),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: r.status.toUpperCase().contains('FAIL') ||
-                                          r.status.toUpperCase().contains('CANCEL')
+                                  color:
+                                      r.status.toUpperCase().contains('FAIL') ||
+                                          r.status.toUpperCase().contains(
+                                            'CANCEL',
+                                          )
                                       ? AppColors.errorContainer
                                       : AppColors.primaryContainer,
                                   borderRadius: BorderRadius.circular(6),
@@ -233,8 +249,13 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
-                                    color: r.status.toUpperCase().contains('FAIL') ||
-                                            r.status.toUpperCase().contains('CANCEL')
+                                    color:
+                                        r.status.toUpperCase().contains(
+                                              'FAIL',
+                                            ) ||
+                                            r.status.toUpperCase().contains(
+                                              'CANCEL',
+                                            )
                                         ? AppColors.onErrorContainer
                                         : AppColors.onPrimaryContainer,
                                   ),
@@ -244,7 +265,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                           ),
                         ),
                         Text(
-                          '₦${_formatCurrency(r.fareNgn)}',
+                          '₦${_formatCurrency(r.displayFareNgn)}',
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
@@ -257,7 +278,9 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
               ] else ...[
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 36),
+                    horizontal: 20,
+                    vertical: 36,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.surfaceContainerLowest,
                     borderRadius: BorderRadius.circular(16),
@@ -304,7 +327,9 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 12),
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -344,6 +369,7 @@ class RideHistoryItem {
   final String status;
   final DateTime createdAt;
   final double fareNgn;
+  final double? settledFareNgn;
   final String pickupAddress;
   final String dropoffAddress;
 
@@ -352,22 +378,45 @@ class RideHistoryItem {
     required this.status,
     required this.createdAt,
     required this.fareNgn,
+    this.settledFareNgn,
     required this.pickupAddress,
     required this.dropoffAddress,
   });
 
   factory RideHistoryItem.fromJson(Map<String, dynamic> json) {
     // Parse kobo to Naira
+    final payment = json['ridePayment'] is Map
+        ? json['ridePayment'] as Map
+        : null;
     final rawFare = json['fare'] ?? json['estimatedFare'] ?? 0;
-    final fare = rawFare is num ? rawFare.toDouble() / 100 : 0.0;
+    final fare = _parseKobo(rawFare) / 100;
+    final settled = payment == null
+        ? null
+        : _parseKobo(payment['finalAmount'] ?? payment['grossFare']) / 100;
 
     return RideHistoryItem(
       id: json['id']?.toString() ?? '',
       status: json['status']?.toString() ?? 'UNKNOWN',
-      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
+      createdAt:
+          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
       fareNgn: fare,
-      pickupAddress: json['pickupAddress']?.toString() ?? json['pickupLocation']?['address']?.toString() ?? '',
-      dropoffAddress: json['dropoffAddress']?.toString() ?? json['dropoffLocation']?['address']?.toString() ?? '',
+      settledFareNgn: settled,
+      pickupAddress:
+          json['pickupAddress']?.toString() ??
+          json['pickupLocation']?['address']?.toString() ??
+          '',
+      dropoffAddress:
+          json['dropoffAddress']?.toString() ??
+          json['dropoffLocation']?['address']?.toString() ??
+          '',
     );
+  }
+
+  double get displayFareNgn => settledFareNgn ?? fareNgn;
+
+  static double _parseKobo(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString().replaceAll(',', '') ?? '') ?? 0;
   }
 }
