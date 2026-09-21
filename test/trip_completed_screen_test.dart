@@ -56,5 +56,21 @@ void main() {
     // Verified: Rate Driver is hidden until payment is completed
     expect(find.text('Rate Driver'), findsNothing);
     expect(find.text('Trip #VR-90210'), findsNothing);
+
+    // Tap the Pay button to open the RidePaymentSheet modal bottom sheet
+    await tester.tap(find.text('Pay ₦3200 via Paystack'));
+    await tester.pumpAndSettle();
+
+    // Bottom sheet is displayed with ride payment options and close button
+    expect(find.text('Ride Payment'), findsOneWidget);
+    expect(find.text('Card'), findsOneWidget);
+    expect(find.text('Transfer'), findsOneWidget);
+    expect(find.byIcon(Icons.close), findsOneWidget);
+    expect(find.text('Pay ₦3,200 via Paystack'), findsOneWidget);
+
+    // Close button dismisses the bottom sheet safely
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(find.text('Ride Payment'), findsNothing);
   });
 }

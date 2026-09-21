@@ -1,10 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:pay_with_paystack/pay_with_paystack.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/config/api_config.dart';
@@ -12,7 +10,6 @@ import '../../../../core/config/mapbox_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/mapbox_geocoding_service.dart';
 import '../../../../core/services/rider_socket_service.dart';
-import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
@@ -69,7 +66,6 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   Timer? _pollTimer;
 
   bool _navigated = false;
-  bool _isProcessingPayment = false;
   late LatLng _destinationPoint;
   LatLng? _driverPoint;
   double? _driverHeading;
@@ -330,131 +326,6 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     final fare = fareRaw is num ? fareRaw.toDouble() : (widget.fareNgn ?? 0.0);
 
     _navigateToSummary(fare: fare, isPaymentConfirmed: isPaymentConfirmed);
-  }
-
-  Future<void> _launchPaystackPayment({
-    required double fare,
-    required Map<String, dynamic> data,
-  }) async {
-    if (_isProcessingPayment || !mounted) return;
-    setState(() => _isProcessingPayment = true);
-
-    final envKey =
-        dotenv.env['PAYSTACK_SECRET_KEY'] ??
-        dotenv.env['PAYSTACK_PUBLIC_KEY'] ??
-        dotenv.env['PAYSTACK_KEY'];
-    final key = (envKey != null && envKey.isNotEmpty)
-        ? envKey
-        : ApiConfig.paystackSecretKey;
-
-    final email =
-        SessionController.instance.user?['email'] ?? 'rider@victoriarides.com';
-    final ref = PayWithPayStack().generateUuidV4();
-
-    try {
-      await PayWithPayStack().now(
-        context: context,
-        secretKey: key,
-        customerEmail: email,
-        reference: ref,
-        currency: 'NGN',
-        amount: fare,
-        transactionCompleted: (paymentData) async {
-          if (mounted) setState(() => _isProcessingPayment = false);
-          if (widget.rideId != null) {
-            try {
-              await ApiClient.instance.post(
-                '${ApiConfig.apiV1}/rides/${widget.rideId}/verify-payment',
-                body: {'reference': paymentData.reference ?? ref},
-              );
-            } catch (e) {
-              debugPrint('Payment verify exception: $e');
-            }
-          }
-          _navigateToSummary(fare: fare, isPaymentConfirmed: true);
-        },
-        transactionNotCompleted: (reason) {
-          if (mounted) setState(() => _isProcessingPayment = false);
-          debugPrint('Paystack transaction not completed: $reason');
-          if (mounted) {
-            _showPaymentRetrySheet(fare: fare, reason: reason, data: data);
-          }
-        },
-      );
-    } catch (e) {
-      if (mounted) setState(() => _isProcessingPayment = false);
-      debugPrint('Paystack error: $e');
-      if (mounted) {
-        _showPaymentRetrySheet(
-          fare: fare,
-          reason: e.toString().replaceFirst('Exception: ', ''),
-          data: data,
-        );
-      }
-    }
-  }
-
-  void _showPaymentRetrySheet({
-    required double fare,
-    required String reason,
-    required Map<String, dynamic> data,
-  }) {
-    showModalBottomSheet<void>(
-      context: context,
-      isDismissible: false,
-      enableDrag: false,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetCtx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.warning_amber_rounded,
-                size: 48,
-                color: Colors.orange,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Payment Incomplete',
-                style: Theme.of(
-                  sheetCtx,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Paystack payment could not be finalized: $reason',
-                style: Theme.of(sheetCtx).textTheme.bodySmall?.copyWith(
-                  color: AppColors.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              AppPrimaryButton(
-                label: 'Retry Paystack Payment',
-                icon: Icons.refresh,
-                onPressed: () {
-                  Navigator.of(sheetCtx).pop();
-                  _launchPaystackPayment(fare: fare, data: data);
-                },
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(sheetCtx).pop();
-                  _navigateToSummary(fare: fare, isPaymentConfirmed: false);
-                },
-                child: const Text('View Trip Summary (Settle Later)'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   void _navigateToSummary({

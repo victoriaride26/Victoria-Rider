@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:pay_with_paystack/pay_with_paystack.dart';
 
-import '../../../../core/config/api_config.dart';
-import '../../../../core/network/api_client.dart';
-import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_primary_button.dart';
+import '../widgets/ride_payment_sheet.dart';
 import 'rate_driver_screen.dart';
 
 /// R-12 — Trip Completed (Payment & Receipt).
@@ -70,73 +66,22 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
     if (m == 'WALLET') return Icons.account_balance_wallet_outlined;
     return Icons.payments_outlined;
   }
-
   Future<void> _payWithPaystack() async {
-    if (_isProcessingPayment || !mounted) return;
-    setState(() => _isProcessingPayment = true);
-
-    final envKey =
-        dotenv.env['PAYSTACK_SECRET_KEY'] ??
-        dotenv.env['PAYSTACK_PUBLIC_KEY'] ??
-        dotenv.env['PAYSTACK_KEY'];
-    final key = (envKey != null && envKey.isNotEmpty)
-        ? envKey
-        : ApiConfig.paystackSecretKey;
-
-    final email =
-        SessionController.instance.user?['email'] ?? 'rider@victoriarides.com';
-    final ref = PayWithPayStack().generateUuidV4();
-    final amount = widget.fareNgn ?? 0.0;
-
-    try {
-      await PayWithPayStack().now(
-        context: context,
-        secretKey: key,
-        customerEmail: email,
-        reference: ref,
-        currency: 'NGN',
-        amount: amount,
-        transactionCompleted: (paymentData) async {
-          if (mounted) {
-            setState(() {
-              _isProcessingPayment = false;
-              _isPaymentConfirmed = true;
-            });
-          }
-          if (widget.rideId != null) {
-            try {
-              await ApiClient.instance.post(
-                '${ApiConfig.apiV1}/rides/${widget.rideId}/verify-payment',
-                body: {'reference': paymentData.reference ?? ref},
-              );
-            } catch (e) {
-              debugPrint('Payment verify exception: $e');
-            }
-          }
-        },
-        transactionNotCompleted: (reason) {
-          if (mounted) setState(() => _isProcessingPayment = false);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Payment not completed: $reason'),
-                backgroundColor: Colors.orange.shade800,
-              ),
-            );
-          }
-        },
-      );
-    } catch (e) {
-      if (mounted) setState(() => _isProcessingPayment = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Payment error: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    }
+    final fare = widget.fareNgn ?? 0.0;
+    await RidePaymentSheet.show(
+      context,
+      rideId: widget.rideId,
+      fareNgn: fare,
+      driverName: widget.driverName,
+      paymentMethod: widget.paymentMethod,
+      onPaymentConfirmed: (confirmed) {
+        if (mounted && confirmed) {
+          setState(() {
+            _isPaymentConfirmed = true;
+          });
+        }
+      },
+    );
   }
 
   @override
