@@ -9,7 +9,9 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/config/mapbox_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/rider_socket_service.dart';
+import '../../../../core/services/rider_chat_service.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/fare_parser.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
 import '../../../../core/widgets/driver_avatar.dart';
@@ -69,6 +71,12 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
 
   bool _driverArrived = false;
   bool _navigated = false;
+
+  /// Backend-calculated fare (the exact value the driver app shows), adopted
+  /// from status polling so downstream screens never keep a stale estimate.
+  double? _backendFareNgn;
+
+  double? get _fareNgn => _backendFareNgn ?? widget.fareNgn;
 
   late LatLng _pickupPoint;
   LatLng? _driverPoint;
@@ -145,6 +153,10 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
           .get(ApiConfig.rideStatus(widget.rideId!));
       final decoded = response as Map<String, dynamic>?;
       final data = decoded?['data'] as Map<String, dynamic>? ?? decoded;
+      final backendFare = FareParser.estimatedFareNgn(response);
+      if (backendFare != null && mounted && backendFare != _backendFareNgn) {
+        setState(() => _backendFareNgn = backendFare);
+      }
       final status =
           (data?['status'] ?? data?['state'])?.toString().toUpperCase();
       _handleStatus(status);
@@ -185,7 +197,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
             pickupLatLng: _pickupPoint,
             destinationLatLng: widget.destinationLatLng,
             destinationLabel: widget.destinationLabel,
-            fareNgn: widget.fareNgn,
+            fareNgn: _fareNgn,
             paymentMethod: widget.paymentMethod,
             pickupAddress: widget.pickupLabel,
             dropoffAddress: widget.destinationLabel,
@@ -596,19 +608,43 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              InRideChatSheet.show(
-                                context,
-                                rideId: widget.rideId ?? 'active_ride',
-                                driverName: name,
+                          child: ListenableBuilder(
+                            listenable: RiderChatService.instance,
+                            builder: (context, _) {
+                              final unread = RiderChatService.instance.unreadCount;
+                              return OutlinedButton.icon(
+                                onPressed: () {
+                                  InRideChatSheet.show(
+                                    context,
+                                    rideId: widget.rideId ?? 'active_ride',
+                                    driverName: name,
+                                  );
+                                },
+                                icon: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    const Icon(Icons.chat_bubble_outline),
+                                    if (unread > 0)
+                                      Positioned(
+                                        right: -4,
+                                        top: -4,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                          child: Text(
+                                            '$unread',
+                                            style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                label: const Text('Message'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
                               );
                             },
-                            icon: const Icon(Icons.chat_bubble_outline),
-                            label: const Text('Message'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
                           ),
                         ),
                       ],
@@ -628,7 +664,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
                             pickupLatLng: _pickupPoint,
                             destinationLatLng: widget.destinationLatLng,
                             destinationLabel: widget.destinationLabel,
-                            fareNgn: widget.fareNgn,
+                            fareNgn: _fareNgn,
                           ),
                         ),
                       ),

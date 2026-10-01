@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/rider_socket_service.dart';
+import '../../../../core/services/rider_chat_service.dart';
 import '../../../../core/theme/app_theme.dart';
 
 /// Modal bottom sheet for live in-ride chat between rider and driver.
@@ -36,45 +37,26 @@ class _InRideChatSheetState extends State<InRideChatSheet>
     with WidgetsBindingObserver {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final List<_ChatMessage> _messages = [];
-  StreamSubscription<Map<String, dynamic>>? _chatSub;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    
+    RiderChatService.instance.isChatOpen = true;
+    RiderChatService.instance.markAsRead();
+    RiderChatService.instance.addListener(_onMessagesChanged);
 
     // Ensure socket is joined to this ride room
     RiderSocketService.instance.subscribeToRideTracking(widget.rideId);
 
     // Restore chat history from backend on open
     _loadChatHistory();
-
-    // Listen to real-time incoming messages
-    _chatSub = RiderSocketService.instance.onChatMessage.listen((data) {
-      final msgRideId = data['rideId']?.toString();
-      if (msgRideId == null || msgRideId == widget.rideId) {
-        final text = (data['message'] ?? data['text'])?.toString();
-        final sender = data['sender']?.toString() ?? 'driver';
-        if (text != null && text.isNotEmpty) {
-          // Avoid duplicate local echoes
-          if (sender == 'rider' &&
-              _messages.isNotEmpty &&
-              _messages.last.isMe &&
-              _messages.last.text == text) {
-            return;
-          }
-          setState(() {
-            _messages.add(_ChatMessage(
-              text: text,
-              isMe: sender == 'rider',
-              time: DateTime.now(),
-            ));
-          });
-          _scrollToBottom();
-        }
-      }
-    });
+  }
+  
+  void _onMessagesChanged() {
+    if (mounted) setState(() {});
+    _scrollToBottom();
   }
 
   @override
@@ -102,7 +84,7 @@ class _InRideChatSheetState extends State<InRideChatSheet>
       }
 
       if (listRaw is List && listRaw.isNotEmpty) {
-        final loaded = <_ChatMessage>[];
+        final loaded = <ChatMessage>[];
         for (final item in listRaw) {
           if (item is Map) {
             final text = (item['message'] ?? item['text'])?.toString();
@@ -115,7 +97,7 @@ class _InRideChatSheetState extends State<InRideChatSheet>
                   DateTime.tryParse(item['createdAt'] as String) ?? DateTime.now();
             }
             if (text != null && text.isNotEmpty) {
-              loaded.add(_ChatMessage(
+              loaded.add(ChatMessage(
                 text: text,
                 isMe: sender == 'rider',
                 time: time,
@@ -124,11 +106,7 @@ class _InRideChatSheetState extends State<InRideChatSheet>
           }
         }
         if (loaded.isNotEmpty && mounted) {
-          setState(() {
-            _messages
-              ..clear()
-              ..addAll(loaded);
-          });
+          RiderChatService.instance.addHistory(loaded);
           _scrollToBottom();
         }
       }
@@ -154,26 +132,15 @@ class _InRideChatSheetState extends State<InRideChatSheet>
     if (text.isEmpty) return;
 
     _controller.clear();
-    setState(() {
-      _messages.add(_ChatMessage(
-        text: text,
-        isMe: true,
-        time: DateTime.now(),
-      ));
-    });
+    RiderChatService.instance.sendMessage(widget.rideId, text);
     _scrollToBottom();
-
-    RiderSocketService.instance.sendChatMessage(
-      rideId: widget.rideId,
-      message: text,
-      sender: 'rider',
-    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _chatSub?.cancel();
+    RiderChatService.instance.isChatOpen = false;
+    RiderChatService.instance.removeListener(_onMessagesChanged);
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -243,7 +210,7 @@ class _InRideChatSheetState extends State<InRideChatSheet>
 
             // Messages
             Expanded(
-              child: _messages.isEmpty
+              child: RiderChatService.instance.messages.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -270,9 +237,9 @@ class _InRideChatSheetState extends State<InRideChatSheet>
                   : ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount: _messages.length,
+                      itemCount: RiderChatService.instance.messages.length,
                       itemBuilder: (context, index) {
-                        final msg = _messages[index];
+                        final msg = RiderChatService.instance.messages[index];
                         return Align(
                           alignment: msg.isMe
                               ? Alignment.centerRight
@@ -346,16 +313,4 @@ class _InRideChatSheetState extends State<InRideChatSheet>
       ),
     );
   }
-}
-
-class _ChatMessage {
-  const _ChatMessage({
-    required this.text,
-    required this.isMe,
-    required this.time,
-  });
-
-  final String text;
-  final bool isMe;
-  final DateTime time;
 }

@@ -63,6 +63,8 @@ abstract final class ApiConfig {
   // --- Rides ---
   static const String rideEstimate = '$apiV1/rides/estimate';
   static const String rideRequest = '$apiV1/rides/request';
+  static String rideHistory({int page = 1, int limit = 10}) =>
+      '$apiV1/rides/history?page=$page&limit=$limit';
   static String rideStatus(String rideId) => '$apiV1/rides/$rideId/status';
   static String rideAccept(String rideId) => '$apiV1/rides/$rideId/accept';
   static String rideArrive(String rideId) => '$apiV1/rides/$rideId/arrive';
@@ -72,11 +74,33 @@ abstract final class ApiConfig {
   static String rideRating(String rideId) => '$apiV1/rides/$rideId/rating';
   static String rideChat(String rideId) => '$apiV1/rides/$rideId/chat';
 
+  // Rider-initiated early drop-off (two-step flow)
+  /// Step 1 (Rider): POST /rides/{id}/early-dropoff { latitude, longitude, reason }
+  /// Backend recalculates fare, status → EARLY_DROPOFF_REQUESTED, alerts driver via WS.
+  static String rideEarlyDropoff(String rideId) =>
+      '$apiV1/rides/$rideId/early-dropoff';
+
+  /// Step 2 (Rider): POST /rides/{id}/early-dropoff/confirm
+  /// Backend → status EARLY_DROPOFF_CONFIRMED, tells driver to pull over safely.
+  /// Driver then locks final billing via POST /rides/{id}/complete.
+  static String rideEarlyDropoffConfirm(String rideId) =>
+      '$apiV1/rides/$rideId/early-dropoff/confirm';
+
+  /// Rider adds a mid-trip stop: POST /rides/{id}/stops { location: { lat, lng, address } }
+  /// Driver is notified via WebSocket (ride:stopover:requested).
+  static String rideAddStop(String rideId) => '$apiV1/rides/$rideId/stops';
+  static String rideStopConfirm(String rideId, int index) =>
+      '$apiV1/rides/$rideId/stops/$index/confirm';
+
   // --- Locations ---
   static const String locationsCountries = '$apiV1/locations/countries';
   static const String locationsStates = '$apiV1/locations/states';
   static String locationsLgas(String stateId) =>
       '$apiV1/locations/states/$stateId/lgas';
+
+  // --- Support ---
+  static const String supportCustomerService = '$apiV1/users/support/customer-service';
+  static const String supportEmergency = '$apiV1/users/support/emergency';
 
   // --- Paystack Configuration ---
   static const String paystackSecretKey =

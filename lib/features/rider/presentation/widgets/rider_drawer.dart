@@ -5,9 +5,14 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../auth/data/auth_repository.dart';
 import '../../../auth/presentation/screens/login_screen.dart';
 import '../../../payments/presentation/screens/wallet_dashboard_screen.dart';
+import '../../../profile/presentation/screens/executive_rewards_screen.dart';
+import '../../../profile/presentation/screens/help_support_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
+import '../../../profile/presentation/screens/settings_screen.dart';
 import '../../../ride/presentation/screens/destination_search_screen.dart';
 import '../../../ride/presentation/screens/ride_history_screen.dart';
+import '../../../notifications/data/notification_service.dart';
+import '../../../notifications/presentation/screens/notifications_screen.dart';
 
 /// Premium Rider Navigation Drawer.
 class RiderDrawer extends StatelessWidget {
@@ -295,6 +300,24 @@ class RiderDrawer extends StatelessWidget {
                     title: 'My Profile',
                     onTap: () => _handleTabSelect(context, 3),
                   ),
+                  // Curated Notifications — SharedPreferences backed
+                  ListenableBuilder(
+                    listenable: RiderNotificationService.instance,
+                    builder: (context, _) => _DrawerTile(
+                      icon: Icons.notifications_outlined,
+                      activeIcon: Icons.notifications,
+                      title: 'Notifications',
+                      badge: RiderNotificationService.instance.unreadCount > 0
+                          ? '${RiderNotificationService.instance.unreadCount}'
+                          : null,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const RiderNotificationsScreen()),
+                        );
+                      },
+                    ),
+                  ),
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     child: Divider(),
@@ -317,11 +340,10 @@ class RiderDrawer extends StatelessWidget {
                     title: 'Promotions & Discounts',
                     badge: 'NEW',
                     badgeColor: AppColors.primary,
-                    onTap: () => _showInfoDialog(
-                      context,
-                      'Promotions & Discounts',
-                      'Enjoy 20% off your next 3 rides using promo code VICTORIA20 at checkout!',
-                    ),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ExecutiveRewardsScreen()));
+                    },
                   ),
                   _DrawerTile(
                     icon: Icons.shield_outlined,
@@ -340,20 +362,18 @@ class RiderDrawer extends StatelessWidget {
                   _DrawerTile(
                     icon: Icons.help_outline,
                     title: 'Help & Support',
-                    onTap: () => _showInfoDialog(
-                      context,
-                      'Help & Support',
-                      'Need help? Our customer support team is available 24/7. Contact us at support@victoriarides.com or via live chat.',
-                    ),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const HelpSupportScreen()));
+                    },
                   ),
                   _DrawerTile(
                     icon: Icons.settings_outlined,
                     title: 'Settings',
-                    onTap: () => _showInfoDialog(
-                      context,
-                      'Settings',
-                      'Manage notifications, privacy, language, and security preferences.',
-                    ),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
+                    },
                   ),
                 ],
               ),

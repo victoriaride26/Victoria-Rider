@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/models/geocoding_result.dart';
+import '../../../../core/services/mapbox_geocoding_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../payments/data/rider_wallet_repository.dart';
 import '../../../payments/presentation/widgets/fund_wallet_sheet.dart';
@@ -62,6 +63,11 @@ class _RideRequestSheetState extends State<RideRequestSheet>
   RideEstimate? _estimate;
   bool _loading = true;
   String? _error;
+
+  /// Intermediate stops added at request time (max 2). These are included
+  /// in the estimate/request payload so the backend can calculate the full
+  /// fare (base fare + perStopFee * stops.length) upfront.
+  final List<GeocodingResult> _stops = [];
 
   /// Location resolved at confirm-time when the sheet was opened without one.
   CurrentLocation? _confirmedLocation;
@@ -177,6 +183,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
         destination: widget.destination.location,
         destinationLabel: widget.destination.shortName,
         vehicleType: vehicle,
+        stops: List<GeocodingResult>.from(_stops),
       );
       if (mounted) {
         setState(() {
@@ -200,6 +207,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
                   destination: widget.destination.location,
                   destinationLabel: widget.destination.shortName,
                   vehicleType: v.id,
+                  stops: List<GeocodingResult>.from(_stops),
                 )
                 .then((otherEst) {
                   if (mounted) {
@@ -215,18 +223,51 @@ class _RideRequestSheetState extends State<RideRequestSheet>
         }
       }
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) setState(() {
+        _error = e.message;
+        _estimate = null;
+        _vehicleEstimates.clear();
+      });
     } catch (e) {
       if (mounted) {
         final rawMsg = e.toString().replaceFirst('Exception: ', '');
-        setState(
-          () => _error = rawMsg.isNotEmpty
+        setState(() {
+          _error = rawMsg.isNotEmpty
               ? rawMsg
-              : 'Estimated fare must be obtained from VT Rides.',
-        );
+              : 'Estimated fare must be obtained from VT Rides.';
+          _estimate = null;
+          _vehicleEstimates.clear();
+        });
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _removeStop(int index) {
+    setState(() {
+      _stops.removeAt(index);
+      _vehicleEstimates.clear();
+      _estimate = null;
+    });
+    _loadEstimate();
+  }
+
+  Future<void> _showAddStopPicker() async {
+    if (_stops.length >= 2) return;
+    final result = await showModalBottomSheet<GeocodingResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _StopPickerSheet(),
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _stops.add(result);
+        _vehicleEstimates.clear();
+        _estimate = null;
+      });
+      _loadEstimate();
     }
   }
 
@@ -296,6 +337,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
             destination: widget.destination.location,
             destinationLabel: widget.destination.shortName,
             vehicleType: _selectedVehicle,
+            stops: List<GeocodingResult>.from(_stops),
           );
           if (mounted) setState(() => _estimate = est);
         } catch (_) {
@@ -320,6 +362,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
         estimate: _estimate!,
         paymentMethod: _selectedPayment,
         vehicleType: _selectedVehicle,
+        stops: List<GeocodingResult>.from(_stops),
       );
 
       if (!mounted) return;
@@ -583,12 +626,217 @@ class _RideRequestSheetState extends State<RideRequestSheet>
 
                   const SizedBox(height: 16),
 
-                  // ── Route summary card ──────────────────────────────────
-                  _RouteCard(
-                    pickupLabel:
-                        widget.currentLocation?.shortLabel ??
-                        'Current Location',
-                    destinationLabel: widget.destination.shortName,
+                  // ── Route summary card (with up to 2 stopovers) ─────────
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.surfaceContainerHigh),
+                    ),
+                    child: Column(
+                      children: [
+                        // Pickup
+                        Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                widget.currentLocation?.shortLabel ?? 'Current Location',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'GPS',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        // Stops (max 2)
+                        for (int i = 0; i < _stops.length; i++) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4, top: 4, bottom: 4),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                width: 2,
+                                height: 14,
+                                color: AppColors.surfaceContainerHighest,
+                              ),
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.secondary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Stop ${i + 1}',
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                        color: AppColors.onSurfaceVariant,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 9,
+                                      ),
+                                    ),
+                                    Text(
+                                      _stops[i].shortName,
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.onSurface,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () => _removeStop(i),
+                                icon: const Icon(Icons.close_rounded, size: 18),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: AppColors.surfaceContainerHighest,
+                                  foregroundColor: AppColors.onSurfaceVariant,
+                                  padding: const EdgeInsets.all(6),
+                                  minimumSize: const Size(28, 28),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        // Connector to destination
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4, top: 4, bottom: 4),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              width: 2,
+                              height: 14,
+                              color: AppColors.surfaceContainerHighest,
+                            ),
+                          ),
+                        ),
+                        // Destination
+                        Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                color: AppColors.error,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                widget.destination.shortName,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.onSurface,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        // Plus button (under destination) — max 2 stops
+                        if (_stops.length < 2) ...[
+                          const SizedBox(height: 12),
+                          InkWell(
+                            onTap: _showAddStopPicker,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceContainerLowest,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppColors.primary.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(alpha: 0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.add_rounded,
+                                      size: 16,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _stops.isEmpty ? 'Add stop' : 'Add another stop',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    '${_stops.length}/2',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: AppColors.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Maximum 2 stops reached',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: AppColors.onSurfaceVariant,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
 
                   const SizedBox(height: 12),
@@ -1196,6 +1444,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
 // Sub-widgets
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ignore: unused_element - kept for reference; route card now inlined with stops
 class _RouteCard extends StatelessWidget {
   const _RouteCard({required this.pickupLabel, required this.destinationLabel});
 
@@ -1438,6 +1687,148 @@ class _EstimateError extends StatelessWidget {
         ),
         TextButton(onPressed: onRetry, child: const Text('Retry')),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stop picker sheet (for adding intermediate stops at request time)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StopPickerSheet extends StatefulWidget {
+  const _StopPickerSheet();
+
+  @override
+  State<_StopPickerSheet> createState() => _StopPickerSheetState();
+}
+
+class _StopPickerSheetState extends State<_StopPickerSheet> {
+  final _controller = TextEditingController();
+  final _geocoding = MapboxGeocodingService();
+  Timer? _debounce;
+
+  List<GeocodingResult> _suggestions = [];
+  bool _searching = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onQueryChanged(String query) {
+    _debounce?.cancel();
+    if (query.trim().length < 3) {
+      setState(() => _suggestions = []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 400), () async {
+      if (!mounted) return;
+      setState(() => _searching = true);
+      try {
+        final results = await _geocoding.search(query);
+        if (mounted) setState(() => _suggestions = results);
+      } catch (_) {
+      } finally {
+        if (mounted) setState(() => _searching = false);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Add Stop',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Add an intermediate stop (max 2). Fare will be recalculated.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _controller,
+                  autofocus: true,
+                  onChanged: _onQueryChanged,
+                  decoration: InputDecoration(
+                    hintText: 'Search for a stop location…',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searching
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_suggestions.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 260),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _suggestions.length,
+                itemBuilder: (_, i) {
+                  final place = _suggestions[i];
+                  final label = place.placeName.isNotEmpty ? place.placeName : place.shortName;
+                  return ListTile(
+                    leading: const Icon(Icons.place_outlined),
+                    title: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(place.shortName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    onTap: () => Navigator.of(context).pop(place),
+                  );
+                },
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+        ],
+      ),
     );
   }
 }

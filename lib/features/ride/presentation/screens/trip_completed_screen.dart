@@ -33,7 +33,7 @@ class TripCompletedScreen extends StatefulWidget {
 
 class _TripCompletedScreenState extends State<TripCompletedScreen> {
   late bool _isPaymentConfirmed;
-  bool _isProcessingPayment = false;
+  final bool _isProcessingPayment = false;
 
   @override
   void initState() {

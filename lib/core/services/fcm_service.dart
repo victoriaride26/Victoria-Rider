@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
+import '../../features/notifications/data/notification_service.dart';
 import 'notification_tray_service.dart';
 import 'session_controller.dart';
 
@@ -65,16 +66,70 @@ class FcmService {
         unawaited(registerTokenWithBackend(token));
       });
 
-      // Foreground message listener
+      // Foreground message listener — curate to RiderNotificationService + tray
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         debugPrint('[FCM] Foreground notification: ${message.notification?.title}');
-        final title = message.notification?.title ?? 'Victoria Rides';
-        final body = message.notification?.body ?? '';
+        final title = message.notification?.title ?? message.data['title']?.toString() ?? 'Victoria Rides';
+        final body = message.notification?.body ?? message.data['body']?.toString() ?? message.data['message']?.toString() ?? '';
+        // Curate to SharedPreferences-backed service so Notifications screen shows history
+        final typeStr = (message.data['type']?.toString() ?? '').toLowerCase();
+        final notifType = switch (typeStr) {
+          'ride' || 'ride_request' => RiderNotificationType.ride,
+          'trip_in_progress' || 'trip_started' || 'in_progress' || 'started' => RiderNotificationType.tripInProgress,
+          'stopover' || 'stop_over' || 'stop' || 'stop_added' => RiderNotificationType.stopOver,
+          'payment' || 'wallet' || 'payout' => RiderNotificationType.payment,
+          'payment_successful' || 'payment_success' || 'payment_completed' => RiderNotificationType.paymentSuccessful,
+          'trip_ended' || 'trip_completed' || 'completed' || 'ended' => RiderNotificationType.tripEnded,
+          'promo' || 'promotion' => RiderNotificationType.promo,
+          _ => RiderNotificationType.system,
+        };
+        RiderNotificationService.instance.insert(
+          RiderNotification(
+            id: message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+            type: notifType,
+            title: title,
+            body: body,
+            createdAt: DateTime.now(),
+            data: message.data,
+          ),
+        );
         NotificationTrayService.instance.show(
           title: title,
           body: body,
         );
       });
+
+      // Background tap — also curate
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        final title = message.notification?.title ?? message.data['title']?.toString() ?? 'Victoria Rides';
+        final body = message.notification?.body ?? message.data['body']?.toString() ?? '';
+        RiderNotificationService.instance.insert(
+          RiderNotification(
+            id: message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+            type: RiderNotificationType.system,
+            title: title,
+            body: body,
+            createdAt: DateTime.now(),
+            data: message.data,
+          ),
+        );
+      });
+
+      final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+      if (initialMessage != null) {
+        final title = initialMessage.notification?.title ?? initialMessage.data['title']?.toString() ?? 'Victoria Rides';
+        final body = initialMessage.notification?.body ?? initialMessage.data['body']?.toString() ?? '';
+        RiderNotificationService.instance.insert(
+          RiderNotification(
+            id: initialMessage.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+            type: RiderNotificationType.system,
+            title: title,
+            body: body,
+            createdAt: DateTime.now(),
+            data: initialMessage.data,
+          ),
+        );
+      }
     } catch (e) {
       debugPrint('[FCM] Firebase initialization skipped: $e');
     }

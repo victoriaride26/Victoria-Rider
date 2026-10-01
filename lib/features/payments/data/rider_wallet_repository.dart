@@ -357,7 +357,7 @@ class RiderWalletRepository {
       final amount = txn['amount'] ?? txn['amountKobo'] ?? lastData['amount'] ?? kobo;
       final id = (txn['id'] ?? txn['_id'] ?? lastData['id'] ?? '').toString();
       final amt = amount is num ? amount.toDouble() / (amount is int && amount >= 100 ? 100 : 1) : amountNgn;
-      return RiderWithdrawalResult(id: id, amountNgn: amt is double ? amt : amountNgn);
+      return RiderWithdrawalResult(id: id, amountNgn: amt);
     }
     if (lastErr != null) throw lastErr;
     return RiderWithdrawalResult(id: '', amountNgn: amountNgn);

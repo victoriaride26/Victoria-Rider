@@ -7,6 +7,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/rider_socket_service.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/fare_parser.dart';
 import '../../../../core/utils/image_url_helper.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
@@ -57,6 +58,14 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
   bool _searchTimedOut = false;
 
   bool _navigated = false;
+
+  /// Backend-calculated fare for this ride (same value the driver app shows).
+  /// Adopted from the status polling so the rider never keeps showing the
+  /// pre-request estimate when the backend assigned a different amount.
+  double? _backendFareNgn;
+
+  /// Fare to surface downstream — backend value wins over the local estimate.
+  double get _fareNgn => _backendFareNgn ?? widget.fareNgn ?? 0.0;
 
   @override
   void initState() {
@@ -150,6 +159,14 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
       );
       final decoded = response as Map<String, dynamic>?;
       final data = decoded?['data'] as Map<String, dynamic>? ?? decoded;
+
+      // Adopt the backend's fare (the one the driver app displays) as soon as
+      // the ride exists, so both apps show the same number.
+      final backendFare = FareParser.estimatedFareNgn(response);
+      if (backendFare != null && mounted && backendFare != _backendFareNgn) {
+        setState(() => _backendFareNgn = backendFare);
+      }
+
       final status = (data?['status'] ?? data?['state'])
           ?.toString()
           .toUpperCase();
@@ -260,19 +277,7 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
           destinationLatLng: widget.destinationLatLng,
           pickupLabel: widget.pickupLabel,
           destinationLabel: widget.destinationLabel,
-          fareNgn: () {
-            final f =
-                data['fare'] ?? data['estimatedFare'] ?? data['finalFare'];
-            if (f is num) return f > 10000 ? f.toDouble() / 100 : f.toDouble();
-            if (f is Map) {
-              final inner = f['estimatedFare'] ?? f['finalFare'] ?? f['amount'];
-              if (inner is num)
-                return inner > 10000
-                    ? inner.toDouble() / 100
-                    : inner.toDouble();
-            }
-            return widget.fareNgn;
-          }(),
+          fareNgn: FareParser.estimatedFareNgn(data) ?? _fareNgn,
           initialDriverLocation: driverLocation,
           paymentMethod:
               widget.paymentMethod ?? data['paymentMethod']?.toString(),

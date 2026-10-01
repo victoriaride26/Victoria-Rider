@@ -4,11 +4,19 @@ import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/data/auth_repository.dart';
 import '../../../auth/presentation/screens/login_screen.dart';
+import '../../../rider/presentation/screens/rider_home_shell.dart';
 import '../../../rider/presentation/widgets/rider_scaffold.dart';
+import 'executive_rewards_screen.dart';
+import 'help_support_screen.dart';
+import 'settings_screen.dart';
+import '../../../ride/presentation/screens/ride_history_screen.dart';
 
 /// Rider profile tab.
 class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.onOpenDrawer});
+
+  /// Callback to open the shell drawer (from [RiderHomeShell]).
+  final VoidCallback? onOpenDrawer;
 
   @override
   Widget build(BuildContext context) {
@@ -31,11 +39,16 @@ class ProfileScreen extends StatelessWidget {
           children: [
             Row(
               children: [
-                Builder(
-                  builder: (ctx) => IconButton(
-                    onPressed: () => Scaffold.of(ctx).openDrawer(),
-                    icon: const Icon(Icons.menu, color: AppColors.onSurface),
-                  ),
+                IconButton(
+                  onPressed: () {
+                    if (onOpenDrawer != null) {
+                      onOpenDrawer!();
+                    } else {
+                      // Fallback: try inner scaffold (may be none), shell will handle via selectTab if needed
+                      Scaffold.maybeOf(context)?.openDrawer();
+                    }
+                  },
+                  icon: const Icon(Icons.menu, color: AppColors.onSurface),
                 ),
                 const SizedBox(width: 8),
                 Text('Profile', style: theme.textTheme.headlineMedium),
@@ -86,25 +99,37 @@ class ProfileScreen extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            const ListTile(
-              leading: Icon(Icons.history, color: AppColors.primary),
-              title: Text('My Rides'),
-              trailing: Icon(Icons.chevron_right),
+            ListTile(
+              leading: const Icon(Icons.history, color: AppColors.primary),
+              title: const Text('My Rides'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                // Prefer switching to My Rides tab (index 1) if inside shell
+                final shell = RiderShellScope.maybeOf(context);
+                if (shell != null) {
+                  shell.selectTab(1);
+                } else {
+                  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RideHistoryScreen()));
+                }
+              },
             ),
-            const ListTile(
-              leading: Icon(Icons.card_giftcard, color: AppColors.primary),
-              title: Text('Executive Rewards'),
-              trailing: Icon(Icons.chevron_right),
+            ListTile(
+              leading: const Icon(Icons.card_giftcard, color: AppColors.primary),
+              title: const Text('Executive Rewards'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ExecutiveRewardsScreen())),
             ),
-            const ListTile(
-              leading: Icon(Icons.support_agent, color: AppColors.primary),
-              title: Text('Help & Support'),
-              trailing: Icon(Icons.chevron_right),
+            ListTile(
+              leading: const Icon(Icons.support_agent, color: AppColors.primary),
+              title: const Text('Help & Support'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const HelpSupportScreen())),
             ),
-            const ListTile(
-              leading: Icon(Icons.settings, color: AppColors.primary),
-              title: Text('Settings'),
-              trailing: Icon(Icons.chevron_right),
+            ListTile(
+              leading: const Icon(Icons.settings, color: AppColors.primary),
+              title: const Text('Settings'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen())),
             ),
             const SizedBox(height: 16),
             ListTile(

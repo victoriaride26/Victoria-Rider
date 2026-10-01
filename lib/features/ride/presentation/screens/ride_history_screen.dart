@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/fare_parser.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../rider/presentation/widgets/rider_scaffold.dart';
 import 'destination_search_screen.dart';
@@ -43,16 +45,29 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
     super.dispose();
   }
 
+  String? _errorMessage;
+
   Future<void> _loadMore() async {
     if (_loading || !_hasMore) return;
     if (!mounted) return;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+    });
 
     try {
       final res = await ApiClient.instance.get(
-        '/api/v1/rides/history?page=$_page&limit=10',
+        ApiConfig.rideHistory(page: _page, limit: 10),
       );
       if (!mounted) return;
+
+      // Live API shape (verified with ternator556@gmail.com & terfabinda@gmail.com):
+      // {success:true, data:[{id,...}], meta:{total, page, limit, totalPages}}
+      // Also handle legacy/alternative shapes for robustness.
+      if (res is Map<String, dynamic> && res['success'] == false) {
+        final msg = res['message']?.toString() ?? 'Failed to load ride history';
+        throw ApiException(msg, statusCode: res['statusCode'] as int?);
+      }
 
       // ApiClient returns the decoded body directly (Map or List), not a Dio Response.
       // Handle all backend shapes: {data:[...],meta:{}} , {data:{rides:[...]}} , [...] , {rides:[...]}.
@@ -67,12 +82,19 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
         if (dataField is List) {
           rawList = dataField;
           meta = responseMap['meta'] as Map<String, dynamic>?;
+          meta ??= responseMap['pagination'] as Map<String, dynamic>?;
+          // Also check dataField may contain meta at same level (some backends nest meta inside data)
         } else if (dataField is Map<String, dynamic>) {
           rawList = (dataField['rides'] ??
                   dataField['items'] ??
                   dataField['history'] ??
-                  dataField['data']) as List?;
-          meta = (dataField['meta'] ?? responseMap['meta']) as Map<String, dynamic>?;
+                  dataField['trips'] ??
+                  dataField['data'] ??
+                  dataField['results']) as List?;
+          meta = (dataField['meta'] ??
+                  dataField['pagination'] ??
+                  responseMap['meta'] ??
+                  responseMap['pagination']) as Map<String, dynamic>?;
           // If data is a map with pagination inside, also look there
           if (rawList == null && dataField['data'] is List) {
             rawList = dataField['data'] as List;
@@ -82,13 +104,17 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
           rawList = (responseMap['rides'] ??
                   responseMap['items'] ??
                   responseMap['history'] ??
+                  responseMap['trips'] ??
                   responseMap['results']) as List?;
-          meta = responseMap['meta'] as Map<String, dynamic>?;
+          meta = (responseMap['meta'] ?? responseMap['pagination']) as Map<String, dynamic>?;
         }
-        // meta may also be under pagination / paging
+        // meta may also be under pagination / paging at various levels
         meta ??= responseMap['pagination'] as Map<String, dynamic>?;
         meta ??= (responseMap['data'] is Map<String, dynamic>
             ? (responseMap['data'] as Map<String, dynamic>)['meta'] as Map<String, dynamic>?
+            : null);
+        meta ??= (responseMap['data'] is Map<String, dynamic>
+            ? (responseMap['data'] as Map<String, dynamic>)['pagination'] as Map<String, dynamic>?
             : null);
       } else if (res is List) {
         rawList = res;
@@ -101,21 +127,30 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
           if (e is Map<String, dynamic>) {
             try {
               parsed.add(RideHistoryItem.fromJson(e));
-            } catch (_) {}
+            } catch (err) {
+              debugPrint('[RideHistory] parse skip Map<String,dynamic>: $err');
+            }
           } else if (e is Map) {
             try {
               parsed.add(RideHistoryItem.fromJson(Map<String, dynamic>.from(e)));
-            } catch (_) {}
+            } catch (err) {
+              debugPrint('[RideHistory] parse skip Map: $err');
+            }
           }
         }
         if (parsed.isNotEmpty) {
           setState(() {
             _rides.addAll(parsed);
             _page++;
-            // Robust totalPages handling: meta may be at top or nested, and may be missing (fallback to hasMore based on page size)
+            // Robust totalPages handling: supports meta {totalPages, total_pages, pages, total, limit}
             final metaPages = (meta?['totalPages'] ?? meta?['total_pages'] ?? meta?['pages']) as num?;
+            final metaTotal = (meta?['total'] ?? meta?['totalItems'] ?? meta?['count']) as num?;
+            final metaLimit = (meta?['limit'] ?? meta?['perPage'] ?? meta?['pageSize']) as num?;
             if (metaPages != null) {
               _totalPages = metaPages.toInt();
+              _hasMore = _page <= _totalPages;
+            } else if (metaTotal != null && metaLimit != null && metaLimit > 0) {
+              _totalPages = (metaTotal / metaLimit).ceil();
               _hasMore = _page <= _totalPages;
             } else {
               // If backend doesn't send meta, assume more if we got full page (10)
@@ -124,14 +159,25 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             }
           });
         } else {
+          debugPrint('[RideHistory] parsed empty despite rawList len ${data.length}');
           setState(() => _hasMore = false);
         }
       } else {
+        debugPrint('[RideHistory] No data: res=$res meta=$meta');
         setState(() => _hasMore = false);
       }
     } catch (e) {
       debugPrint('[RideHistory] _loadMore error: $e');
-      if (mounted) setState(() => _hasMore = false);
+      if (mounted) {
+        setState(() {
+          _hasMore = false;
+          if (e is ApiException) {
+            _errorMessage = e.message;
+          } else {
+            _errorMessage = 'Failed to load rides. Pull to retry.';
+          }
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -332,6 +378,68 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                       ],
                     ),
                   ),
+              ] else if (_errorMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 36),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.surfaceContainerHigh),
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: const BoxDecoration(
+                          color: AppColors.errorContainer,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.error_outline,
+                          size: 36,
+                          color: AppColors.error,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        _errorMessage!.contains('Driver profile not found') ? 'Driver profile not found' : 'Failed to load rides',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          color: AppColors.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _errorMessage!.contains('Driver profile not found')
+                            ? 'Please complete your driver onboarding to view trip history.'
+                            : _errorMessage!,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _errorMessage = null;
+                            _hasMore = true;
+                          });
+                          _loadMore();
+                        },
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Retry', style: TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ),
+                ),
               ] else ...[
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -451,16 +559,10 @@ class RideHistoryItem {
       j = Map<String, dynamic>.from(j['data'] as Map);
     }
 
-    // Parse kobo to Naira — handle nested fare objects and flat fields
-    final payment = j['ridePayment'] is Map ? j['ridePayment'] as Map : null;
-    final fareObj = j['fare'];
-    final rawFare = fareObj is Map
-        ? (fareObj['finalAmount'] ?? fareObj['grossFare'] ?? fareObj['estimatedFare'] ?? fareObj['amount'] ?? fareObj['total'] ?? fareObj['fare'] ?? 0)
-        : (j['fare'] ?? j['estimatedFare'] ?? j['estimated_fare'] ?? j['fareAmount'] ?? j['amount'] ?? 0);
-    final fare = _parseKobo(rawFare) / 100;
-    final settled = payment == null
-        ? null
-        : _parseKobo(payment['finalAmount'] ?? payment['grossFare'] ?? payment['amount']) / 100;
+    // Parse kobo → Naira with the driver app's canonical parser so history
+    // matches exactly what the driver app displays for the same ride.
+    final fare = FareParser.estimatedFareNgn(j) ?? 0.0;
+    final settled = FareParser.settledFareNgn(j);
 
     // Address resolution with all known keys
     final pickupAddr = j['pickupAddress']?.toString() ??
@@ -490,9 +592,4 @@ class RideHistoryItem {
   }
 
   double get displayFareNgn => settledFareNgn ?? fareNgn;
-
-  static double _parseKobo(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString().replaceAll(',', '') ?? '') ?? 0;
-  }
 }

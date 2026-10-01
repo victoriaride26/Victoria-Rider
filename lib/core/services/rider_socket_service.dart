@@ -4,6 +4,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../config/api_config.dart';
+import '../network/api_client.dart';
+import '../../features/notifications/data/notification_service.dart';
 import 'session_controller.dart';
 
 /// Real-time driver GPS coordinate update streamed over WebSockets.
@@ -118,6 +120,22 @@ class RiderSocketService {
   final StreamController<Map<String, dynamic>> _paymentPendingController =
       StreamController<Map<String, dynamic>>.broadcast();
 
+  /// Backend emits updated fare after rider POST /rides/{id}/early-dropoff.
+  /// Payload: { rideId, newFare, estimatedFare, latitude, longitude, reason, … }
+  final StreamController<Map<String, dynamic>> _earlyDropoffFareController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  /// Backend/driver acknowledges a mid-trip stop addition.
+  final StreamController<Map<String, dynamic>> _stopAddedController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  /// Stopover wait timer events (confirmation_requested, confirmed, timer:start, timer:completed)
+  final StreamController<Map<String, dynamic>> _stopoverTimerController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  final StreamController<Map<String, dynamic>> _fareUpdatedController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
   bool get isConnected => _isConnected;
 
   /// Stream of ride acceptance / match events when a driver accepts a request.
@@ -142,6 +160,21 @@ class RiderSocketService {
   /// Stream of payment pending events (e.g. for card/transfer payment at trip end).
   Stream<Map<String, dynamic>> get onPaymentPending =>
       _paymentPendingController.stream;
+
+  /// Stream of early drop-off fare recalculation events.
+  /// Backend emits this after `POST /rides/{id}/early-dropoff` with the new fare.
+  /// Rider should display fare and confirm via `POST /rides/{id}/early-dropoff/confirm`.
+  Stream<Map<String, dynamic>> get onEarlyDropoffFareUpdate =>
+      _earlyDropoffFareController.stream;
+
+  /// Stream of stop-added acknowledgements from backend or driver.
+  Stream<Map<String, dynamic>> get onStopAdded => _stopAddedController.stream;
+
+  /// Stream of stopover wait timer events (confirmation_requested, confirmed, timer:start/completed)
+  Stream<Map<String, dynamic>> get onStopoverTimer => _stopoverTimerController.stream;
+
+  /// Stream of dedicated fare update events (ride:fare:updated)
+  Stream<Map<String, dynamic>> get onFareUpdated => _fareUpdatedController.stream;
 
   /// Connects to the backend Socket.IO server with the rider's JWT token.
   void connect() {
@@ -245,10 +278,30 @@ class RiderSocketService {
           _paymentPendingController.add(Map<String, dynamic>.from(data));
         }
       });
+      
+      _socket!.on('ride:payment_successful', (data) {
+        debugPrint('[RiderSocket] Received ride:payment_successful: $data');
+        RiderNotificationService.instance.insert(RiderNotification(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          type: RiderNotificationType.paymentSuccessful,
+          title: 'Payment Successful',
+          body: 'Your payment was successful.',
+          createdAt: DateTime.now(),
+        ));
+      });
 
       // ── 3. Ride status updates ──
       _socket!.on('ride:status:update', (data) {
         debugPrint('[RiderSocket] Received ride:status:update: $data');
+        if (data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          _statusUpdateController.add(map);
+          _rideStateController.add(map);
+        }
+      });
+
+      _socket!.on('ride:state', (data) {
+        debugPrint('[RiderSocket] Received ride:state: $data');
         if (data is Map) {
           final map = Map<String, dynamic>.from(data);
           _statusUpdateController.add(map);
@@ -273,6 +326,15 @@ class RiderSocketService {
           if (map['status'] == null && map['state'] == null) {
             map['status'] = fallbackStatus;
           }
+          if (fallbackStatus == 'COMPLETED') {
+             RiderNotificationService.instance.insert(RiderNotification(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                type: RiderNotificationType.tripEnded,
+                title: 'Trip Completed',
+                body: 'Your ride has successfully completed.',
+                createdAt: DateTime.now(),
+             ));
+          }
           _statusUpdateController.add(map);
           _rideStateController.add(map);
         } else if (data != null) {
@@ -290,6 +352,47 @@ class RiderSocketService {
       _socket!.on('ride:canceled', (data) => handleTermination(data, 'CANCELLED'));
       _socket!.on('ride:ended', (data) => handleTermination(data, 'COMPLETED'));
       _socket!.on('ride:end', (data) => handleTermination(data, 'COMPLETED'));
+
+      // ── 3c. Early drop-off fare recalculation (backend → rider after POST /early-dropoff) ──
+      void handleEarlyDropoffFare(dynamic data) {
+        debugPrint('[RiderSocket] Received early-dropoff fare update: $data');
+        if (data is Map) {
+          _earlyDropoffFareController.add(Map<String, dynamic>.from(data));
+        }
+      }
+
+      // Backend may emit any of these after recalculating the fare
+      _socket!.on('ride:early_dropoff:requested', handleEarlyDropoffFare);
+      _socket!.on('ride:early_dropoff:fare', handleEarlyDropoffFare);
+      _socket!.on('ride:earlyDropoff:requested', handleEarlyDropoffFare);
+      _socket!.on('ride:earlyDropoff', handleEarlyDropoffFare);
+
+      // ── 3d. Stopover wait timer (confirmation_requested, confirmed, timer:start/completed) ──
+      void handleStopoverTimer(dynamic data, String type) {
+        debugPrint('[RiderSocket] Received stopover timer event: $data ($type)');
+        if (data is Map) {
+          final m = Map<String, dynamic>.from(data);
+          m['type'] ??= type;
+          _stopoverTimerController.add(m);
+        } else if (data != null) {
+          _stopoverTimerController.add({'data': data, 'type': type});
+        }
+      }
+
+      _socket!.on('ride:stopover:confirmation_requested', (data) => handleStopoverTimer(data, 'confirmation_requested'));
+      _socket!.on('ride:stopover:confirmed', (data) {
+        handleStopoverTimer(data, 'confirmed');
+        RiderNotificationService.instance.insert(RiderNotification(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          type: RiderNotificationType.stopOver,
+          title: 'Stopover Arrived',
+          body: 'You have arrived at the stopover.',
+          createdAt: DateTime.now(),
+        ));
+      });
+      _socket!.on('ride:stopover:timer:start', (data) => handleStopoverTimer(data, 'timer:start'));
+      _socket!.on('ride:stopover:timer:completed', (data) => handleStopoverTimer(data, 'timer:completed'));
+      _socket!.on('ride:stopover:completed', (data) => handleStopoverTimer(data, 'timer:completed'));
 
       // ── 4. Driver GPS coordinate streaming ──
       void handleLocationUpdate(dynamic data) {
@@ -328,6 +431,14 @@ class RiderSocketService {
       _socket!.on('ride:chat:message', handleChatMessage);
       _socket!.on('chat:message', handleChatMessage);
       _socket!.on('ride:message', handleChatMessage);
+
+      // ── 6. Fare Updates ──
+      _socket!.on('ride:fare:updated', (data) {
+        debugPrint('[RiderSocket] Received ride:fare:updated: $data');
+        if (data is Map) {
+          _fareUpdatedController.add(Map<String, dynamic>.from(data));
+        }
+      });
 
       _socket!.connect();
     } catch (e) {
@@ -386,6 +497,13 @@ class RiderSocketService {
     debugPrint('[RiderSocket] Emitting ride:chat:send: $payload');
     _socket!.emit('ride:chat:send', payload);
     _socket!.emit('chat:send', payload);
+
+    try {
+      ApiClient.instance.post(ApiConfig.rideChat(rideId), body: {
+        'message': message,
+        'sender': sender,
+      }).catchError((e) => debugPrint('[RiderSocket] HTTP fallback failed: $e'));
+    } catch (_) {}
   }
 
   /// Disconnects and cleans up socket resources.

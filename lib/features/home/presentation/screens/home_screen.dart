@@ -6,8 +6,13 @@ import '../../../../core/services/location_service.dart';
 import '../../../../core/services/places_storage_service.dart';
 import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../ride/presentation/screens/daily_ride_screen.dart';
 import '../../../ride/presentation/screens/destination_search_screen.dart';
+import '../../../ride/presentation/screens/reserve_ride_screen.dart';
 import '../../../ride/presentation/screens/ride_history_screen.dart';
+import '../../../ride/presentation/widgets/ride_request_sheet.dart';
+import '../../../notifications/data/notification_service.dart';
+import '../../../notifications/presentation/screens/notifications_screen.dart';
 
 /// R-06 — Redesigned Rider Dashboard.
 ///
@@ -74,12 +79,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _loadCurrentLocation() async {
     if (!mounted) return;
     setState(() => _locationLoading = true);
-    final loc = await _locationService.getCurrentLocation();
-    if (mounted) {
-      setState(() {
-        _currentLocation = loc;
-        _locationLoading = false;
-      });
+    try {
+      final loc = await _locationService
+          .getCurrentLocation()
+          .timeout(const Duration(seconds: 2), onTimeout: () => null);
+      if (mounted) {
+        setState(() {
+          _currentLocation = loc;
+          _locationLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _locationLoading = false);
     }
   }
 
@@ -139,7 +150,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       body: SafeArea(
         child: RefreshIndicator(
           color: AppColors.primary,
-          onRefresh: _loadDashboardData,
+          onRefresh: () async {
+            await Future.wait([
+              _loadDashboardData(),
+              _loadCurrentLocation(),
+            ]);
+          },
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             physics: const AlwaysScrollableScrollPhysics(
@@ -254,6 +270,44 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                   ),
                   const SizedBox(width: 12),
+                  // Notifications bell — curated via SharedPreferences
+                  ListenableBuilder(
+                    listenable: RiderNotificationService.instance,
+                    builder: (context, _) {
+                      final unread = RiderNotificationService.instance.unreadCount;
+                      return Material(
+                        color: AppColors.surfaceContainerLowest,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: const BorderSide(color: AppColors.surfaceContainerHigh),
+                        ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RiderNotificationsScreen())),
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.all(10),
+                                child: Icon(Icons.notifications_outlined, color: AppColors.primary, size: 22),
+                              ),
+                              if (unread > 0)
+                                Positioned(
+                                  right: 4,
+                                  top: 4,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                    decoration: BoxDecoration(color: AppColors.error, borderRadius: BorderRadius.circular(10)),
+                                    child: Text(unread > 9 ? '9+' : '$unread', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
                   // Safety Shield / Quick Profile Avatar
                   Material(
                     color: AppColors.surfaceContainerLowest,
@@ -544,6 +598,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               const SizedBox(height: 20),
 
               // --- Quick Action Services ---
+              // Courier removed for now - Daily Ride + Reserve resized to fill row
               Row(
                 children: [
                   _QuickServiceCard(
@@ -553,7 +608,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     highlight: true,
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => DestinationSearchScreen(
+                        builder: (_) => DailyRideScreen(
                           currentLocation: _currentLocation,
                         ),
                       ),
@@ -566,23 +621,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     subtitle: 'Schedule trip',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => DestinationSearchScreen(
+                        builder: (_) => ReserveRideScreen(
                           currentLocation: _currentLocation,
                         ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  _QuickServiceCard(
-                    icon: Icons.local_shipping_outlined,
-                    title: 'Courier',
-                    subtitle: 'Fast delivery',
-                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Courier delivery service launching soon!',
-                        ),
-                        behavior: SnackBarBehavior.floating,
                       ),
                     ),
                   ),
@@ -647,13 +688,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(14),
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => DestinationSearchScreen(
-                              currentLocation: _currentLocation,
-                            ),
-                          ),
-                        ),
+                        onTap: () {
+                          // Auto setup ride request: Pickup = Current Location, Dropoff = Saved Location
+                          final destination = place.toGeocodingResult();
+                          showRideRequestSheet(
+                            context,
+                            destination: destination,
+                            currentLocation: _currentLocation,
+                          );
+                        },
                         child: Container(
                           width: 170,
                           padding: const EdgeInsets.all(12),

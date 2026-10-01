@@ -59,6 +59,12 @@ void main() {
     expect(find.text('Victoria Rider'), findsOneWidget);
     expect(find.text('victoria@example.com'), findsOneWidget);
     expect(find.text('My Rides'), findsOneWidget);
+    // Saved Places is below Notifications in the drawer — scroll to reveal
+    await tester.drag(
+      find.descendant(of: find.byType(RiderDrawer), matching: find.byType(ListView)),
+      const Offset(0, -250),
+    );
+    await tester.pumpAndSettle();
     expect(
       find.descendant(
         of: find.byType(RiderDrawer),

@@ -2,8 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/config/api_config.dart';
+import '../../../core/models/geocoding_result.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/services/directions_service.dart';
+import '../../../core/utils/fare_parser.dart';
 
 /// Summary returned after resolving the route between two points.
 class RideEstimate {
@@ -85,7 +87,10 @@ class RideRequestService {
     required LatLng destination,
     required String destinationLabel,
     String vehicleType = 'standard',
+    List<GeocodingResult> stops = const [],
   }) async {
+    // Clamp to max 2 stops per product spec
+    final effectiveStops = stops.length > 2 ? stops.sublist(0, 2) : stops;
     // 1 - Backend estimate
     final response = await ApiClient.instance.post(
       ApiConfig.rideEstimate,
@@ -105,39 +110,34 @@ class RideRequestService {
           'address': destinationLabel,
         },
         'vehicleType': normalizeVehicleType(vehicleType),
+        if (effectiveStops.isNotEmpty)
+          'stops': effectiveStops
+              .map((s) => {
+                    'lat': s.location.latitude,
+                    'lng': s.location.longitude,
+                    'address': s.placeName.isNotEmpty ? s.placeName : s.shortName,
+                  })
+              .toList(),
+        if (effectiveStops.isNotEmpty)
+          'stopovers': effectiveStops
+              .map((s) => {
+                    'lat': s.location.latitude,
+                    'lng': s.location.longitude,
+                    'address': s.placeName.isNotEmpty ? s.placeName : s.shortName,
+                  })
+              .toList(),
       },
     );
 
     if (response is Map<String, dynamic>) {
       final data = response['data'] as Map<String, dynamic>? ?? response;
 
-      // 1. Parse Fare strictly from backend
-      double? fare;
-      final fareObj = data['fare'];
-      if (fareObj is Map) {
-        final estRaw =
-            fareObj['estimatedFare'] ??
-            fareObj['finalFare'] ??
-            fareObj['amount'];
-        if (estRaw != null) {
-          final parsed = double.tryParse(
-            estRaw.toString().replaceAll(RegExp(r'[^\d.]'), ''),
-          );
-          if (parsed != null) fare = parsed > 10000 ? parsed / 100 : parsed;
-        }
-      } else if (data['estimatedFare'] != null || fareObj != null) {
-        final raw = data['estimatedFare'] ?? fareObj;
-        if (raw is num) {
-          fare = raw.toDouble() > 10000 ? raw.toDouble() / 100 : raw.toDouble();
-        } else {
-          final parsed = double.tryParse(
-            raw.toString().replaceAll(RegExp(r'[^\d.]'), ''),
-          );
-          if (parsed != null) fare = parsed > 10000 ? parsed / 100 : parsed;
-        }
-      }
+      // 1. Parse Fare strictly from backend, using the driver app's canonical
+      //    parser so the sheet shows the exact number the driver is shown.
+      final fareKobo = FareParser.estimatedFareKobo(response);
 
-      if (fare != null && fare > 0) {
+      if (fareKobo > 0) {
+        final fare = fareKobo / 100.0;
         // 2. Parse Route (Distance & Duration)
         double? distance;
         int? duration;
@@ -211,6 +211,7 @@ class RideRequestService {
     required RideEstimate estimate,
     required String paymentMethod,
     required String vehicleType,
+    List<GeocodingResult> stops = const [],
   }) async {
     if (estimate.fareNgn <= 0) {
       throw Exception(
@@ -220,9 +221,10 @@ class RideRequestService {
 
     final backendVehicle = normalizeVehicleType(vehicleType);
     final backendPayment = normalizePaymentMethod(paymentMethod);
+    final effectiveStops = stops.length > 2 ? stops.sublist(0, 2) : stops;
 
     debugPrint(
-      '[RideRequestService] Requesting ride: vehicle=$backendVehicle payment=$backendPayment pickup=${estimate.pickupLabel} drop=${estimate.destinationLabel}',
+      '[RideRequestService] Requesting ride: vehicle=$backendVehicle payment=$backendPayment pickup=${estimate.pickupLabel} drop=${estimate.destinationLabel} stops=${effectiveStops.length}',
     );
 
     try {
@@ -248,6 +250,22 @@ class RideRequestService {
           },
           'vehicleType': backendVehicle,
           'paymentMethod': backendPayment,
+          if (effectiveStops.isNotEmpty)
+            'stops': effectiveStops
+                .map((s) => {
+                      'lat': s.location.latitude,
+                      'lng': s.location.longitude,
+                      'address': s.placeName.isNotEmpty ? s.placeName : s.shortName,
+                    })
+                .toList(),
+          if (effectiveStops.isNotEmpty)
+            'stopovers': effectiveStops
+                .map((s) => {
+                      'lat': s.location.latitude,
+                      'lng': s.location.longitude,
+                      'address': s.placeName.isNotEmpty ? s.placeName : s.shortName,
+                    })
+                .toList(),
         },
       );
 
@@ -255,7 +273,7 @@ class RideRequestService {
       // OpenAPI spec, so we probe the most common key patterns.
       String? rideId;
       if (response is Map<String, dynamic>) {
-        final data = response['data'] as Map<String, dynamic>? ?? response;
+      final data = FareParser.unwrap(response);
         rideId =
             data['rideId']?.toString() ??
             data['id']?.toString() ??

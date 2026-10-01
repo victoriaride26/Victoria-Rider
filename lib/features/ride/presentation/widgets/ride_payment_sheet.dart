@@ -8,6 +8,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/fare_parser.dart';
 import '../../../../core/widgets/app_primary_button.dart';
 
 enum _PaymentChannel { card, transfer }
@@ -91,6 +92,22 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
       _step = _PaymentStep.launching;
     });
 
+    // Query backend for the very latest fare before creating the transaction
+    double finalFare = widget.fareNgn;
+    if (widget.rideId != null) {
+      try {
+        final response = await ApiClient.instance.get(ApiConfig.rideStatus(widget.rideId!));
+        // Settled fare when present, otherwise the backend estimate — the same
+        // rule the driver app uses, so both sides charge/show the same amount.
+        final backendFare = FareParser.finalFareNgn(response);
+        if (backendFare != null && backendFare > 0) {
+          finalFare = backendFare;
+        }
+      } catch (e) {
+        debugPrint('[RidePaymentSheet] Error querying latest fare: $e');
+      }
+    }
+
     final envKey =
         dotenv.env['PAYSTACK_SECRET_KEY'] ??
         dotenv.env['PAYSTACK_PUBLIC_KEY'] ??
@@ -103,7 +120,7 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
         SessionController.instance.user?['email'] ?? 'rider@victoriarides.com';
     final ref =
         'VR_RIDE_${widget.rideId ?? DateTime.now().millisecondsSinceEpoch}_${DateTime.now().millisecondsSinceEpoch}';
-    final amountKobo = (widget.fareNgn * 100).round();
+    final amountKobo = (finalFare * 100).round();
 
     _currentReference = ref;
 

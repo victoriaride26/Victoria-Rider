@@ -185,7 +185,7 @@ class _AddSavedPlaceScreenState extends State<AddSavedPlaceScreen> {
                 child: ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: _searchResults.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.surfaceContainerHigh),
+                  separatorBuilder: (context, index) => const Divider(height: 1, color: AppColors.surfaceContainerHigh),
                   itemBuilder: (context, i) {
                     final res = _searchResults[i];
                     return ListTile(

@@ -8,6 +8,7 @@ import 'core/services/background_location_service.dart';
 import 'core/services/fcm_service.dart';
 import 'core/services/notification_tray_service.dart';
 import 'core/services/places_storage_service.dart';
+import 'features/notifications/data/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/screens/splash_screen.dart';
 
@@ -28,6 +29,11 @@ Future<void> main() async {
   } catch (_) {
     // Tests / unsupported platforms — ignore.
   }
+
+  // Curated notifications — SharedPreferences backed, survives restart.
+  try {
+    await RiderNotificationService.instance.init();
+  } catch (_) {}
 
   // Push notifications (Firebase Cloud Messaging).
   try {
