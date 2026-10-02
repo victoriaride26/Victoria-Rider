@@ -87,6 +87,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   int _stopoverWaitDuration = 180; // Defaults to 180s, updated via backend events
 
   bool _navigated = false;
+  bool _terminating = false;
   late LatLng _destinationPoint;
   LatLng? _driverPoint;
   double? _driverHeading;
@@ -365,6 +366,12 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   // ─────────────────────────────────────────────────────────────────
   // Stopover wait timer handlers (backend: arrive -> confirmation_requested -> confirm -> timer:start -> timer:completed)
   // ─────────────────────────────────────────────────────────────────
+
+  /// Backend stop indexes are waypoint indexes (pickup = 0, first stop-over =
+  /// 1, …), so the first stop-over reports `index == 1`. Normalizing keeps the
+  /// rider dialog saying "Stop 1 / Stop 2" — the same numbers the driver taps.
+  int _stopDisplayNumber(int index) => index >= 1 ? index : index + 1;
+
   Future<void> _handleStopoverConfirmationRequested(Map<String, dynamic> data) async {
     if (!mounted || _navigated) return;
     final rideId = (data['rideId'] ?? data['id'] ?? widget.rideId)?.toString() ?? widget.rideId ?? '';
@@ -378,7 +385,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Driver Arrived at Stop'),
-        content: Text('Your driver has arrived at Stop ${stopIndex + 1}: $address. Please confirm to start the ${(waitThreshold / 60).toInt()}-minute free wait.'),
+        content: Text('Your driver has arrived at Stop ${_stopDisplayNumber(stopIndex)}: $address. Please confirm to start the ${(waitThreshold / 60).toInt()}-minute free wait.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Not Yet')),
           FilledButton(
@@ -555,24 +562,45 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   }
 
   Future<void> _handleSupportAction(String endpoint, String title) async {
-    showDialog(
+    if (!mounted || _navigated) return;
+    showDialog<void>(
       context: context,
       barrierDismissible: false,
       useRootNavigator: true,
       builder: (dialogCtx) {
-        _doSupportFetch(endpoint, title, dialogCtx);
-        return const Center(child: CircularProgressIndicator());
+        // _doSupportFetch owns its loading dialog and dismisses it exactly once.
+        unawaited(_doSupportFetch(endpoint, title, dialogCtx));
+        return const PopScope(
+          canPop: false,
+          child: Center(child: CircularProgressIndicator()),
+        );
       },
     );
   }
 
   Future<void> _doSupportFetch(String endpoint, String title, BuildContext dialogCtx) async {
+    // Dismiss the loading dialog exactly once. Popping a second time (the old
+    // success-path + catch-path pops) removed whatever route sat on top of the
+    // dialog — i.e. the Trip-in-Progress screen itself — making Emergency and
+    // Customer Care silently destroy the trip screen.
+    var dialogDismissed = false;
+    void dismissDialog() {
+      if (dialogDismissed) return;
+      dialogDismissed = true;
+      if (dialogCtx.mounted) {
+        try {
+          Navigator.of(dialogCtx).pop();
+        } catch (_) {
+          // Dialog already gone — never pop again.
+        }
+      }
+    }
+
     try {
       final res = await ApiClient.instance.get(endpoint);
-      if (dialogCtx.mounted) {
-        Navigator.of(dialogCtx).pop(); // Safely pop the dialog
-      }
-      
+      dismissDialog();
+      if (!mounted) return;
+
       if (res != null) {
         final data = res['data'] ?? res;
         final name = data['name']?.toString() ?? title;
@@ -615,7 +643,15 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                           subtitle: Text(phone, style: const TextStyle(fontWeight: FontWeight.w600)),
                           onTap: () async {
                             final url = Uri.parse('tel:$phone');
-                            if (await canLaunchUrl(url)) await launchUrl(url);
+                            try {
+                              if (await canLaunchUrl(url)) await launchUrl(url);
+                            } catch (_) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Could not open the dialer.')),
+                                );
+                              }
+                            }
                           },
                         ),
                       if (whatsapp != null && whatsapp.isNotEmpty)
@@ -629,7 +665,17 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                           subtitle: Text(whatsapp, style: const TextStyle(fontWeight: FontWeight.w600)),
                           onTap: () async {
                             final url = Uri.parse('https://wa.me/${whatsapp.replaceAll(RegExp(r'[^0-9]'), '')}');
-                            if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+                            try {
+                              if (await canLaunchUrl(url)) {
+                                await launchUrl(url, mode: LaunchMode.externalApplication);
+                              }
+                            } catch (_) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Could not open WhatsApp.')),
+                                );
+                              }
+                            }
                           },
                         ),
                       const SizedBox(height: 16),
@@ -647,11 +693,15 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
             },
           );
         }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Support contact is unavailable right now. Please try again.'),
+          ),
+        );
       }
     } catch (e) {
-      if (dialogCtx.mounted) {
-        Navigator.of(dialogCtx).pop(); // Safely pop the dialog
-      }
+      dismissDialog();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error contacting support: $e')));
       }
@@ -749,7 +799,8 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     bool isEarlyDropoff = false,
     double? newFareNgn,
   }) async {
-    if (_navigated || !mounted) return;
+    if (_terminating || _navigated || !mounted) return;
+    _terminating = true;
 
     if (data['paymentMethod'] != null) {
       _activePaymentMethod = data['paymentMethod'].toString();
@@ -777,10 +828,33 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       final backendFare = FareParser.finalFareNgn(data);
       if (backendFare != null && backendFare > 0) {
         fare = backendFare;
+      } else {
+        // Termination payloads often carry no fare at all. Ask the backend once
+        // so the receipt shows the same final bill as the driver's summary,
+        // instead of falling back to the pre-request estimate.
+        final refreshed = await _fetchFinalFare();
+        if (refreshed != null && refreshed > 0) {
+          fare = refreshed;
+        } else if (_liveFareNgn != null && _liveFareNgn! > 0) {
+          fare = _liveFareNgn!;
+        }
       }
     }
 
     _navigateToSummary(fare: fare, isPaymentConfirmed: isPaymentConfirmed);
+  }
+
+  /// Final fare straight from the backend (settled → estimate), so the receipt
+  /// never falls back to the value captured when the ride was requested.
+  Future<double?> _fetchFinalFare() async {
+    final id = widget.rideId;
+    if (id == null || id.isEmpty) return null;
+    try {
+      final res = await ApiClient.instance.get(ApiConfig.rideStatus(id));
+      return FareParser.finalFareNgn(res);
+    } catch (_) {
+      return null;
+    }
   }
 
   void _navigateToSummary({
@@ -835,15 +909,19 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     final phone = widget.driverPhone;
     if (phone != null && phone.isNotEmpty) {
       final uri = Uri.parse('tel:$phone');
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-        return;
+      try {
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri);
+          return;
+        }
+      } catch (_) {
+        // Fall through to the dialog below.
       }
     }
     if (!mounted) return;
     showDialog<void>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('Contact Driver'),
         content: Text(
           phone != null && phone.isNotEmpty
@@ -852,14 +930,21 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogCtx).pop(),
             child: const Text('Close'),
           ),
           if (phone != null && phone.isNotEmpty)
             TextButton(
               onPressed: () {
-                Navigator.of(context).pop();
-                launchUrl(Uri.parse('tel:$phone'));
+                Navigator.of(dialogCtx).pop();
+                launchUrl(Uri.parse('tel:$phone')).catchError((_) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Could not open the dialer.')),
+                    );
+                  }
+                  return false;
+                });
               },
               child: const Text('Call Now'),
             ),
@@ -1196,9 +1281,12 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                                 final s = entry.value;
                                 final i = entry.key;
                                 final loc = s['location'] ?? s;
-                                final address = loc['address']?.toString() ?? 'Stop ${i + 1}';
-                                final completed = s['completed'] == true || s['status'] == 'completed';
-                                final arrived = s['status'] == 'arrived';
+                                final rawIndex = s['index'] ?? s['stopIndex'] ?? (i + 1);
+                                final stopNumber = _stopDisplayNumber(rawIndex is int ? rawIndex : int.tryParse(rawIndex.toString()) ?? (i + 1));
+                                final status = (s['status'] ?? '').toString().toUpperCase();
+                                final address = loc['address']?.toString() ?? 'Stop $stopNumber';
+                                final completed = s['completed'] == true || status == 'COMPLETED';
+                                final arrived = status == 'ARRIVED';
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 12.0),
                                   child: Row(
@@ -1214,7 +1302,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              'Stop ${i + 1}',
+                                              'Stop $stopNumber',
                                               style: const TextStyle(
                                                 fontSize: 11,
                                                 color: AppColors.onSurfaceVariant,

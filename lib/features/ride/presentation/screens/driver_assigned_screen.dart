@@ -185,7 +185,10 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
       _pollTimer?.cancel();
       _statusSub?.cancel();
       _locationSub?.cancel();
-      Navigator.of(context).pushReplacement(
+      // Trip-in-Progress becomes the top route (only the home shell stays
+      // underneath), so back can't leave the trip — and this screen's polling
+      // stops with it.
+      Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute<void>(
           builder: (_) => RideInProgressScreen(
             rideId: widget.rideId,
@@ -203,6 +206,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
             dropoffAddress: widget.destinationLabel,
           ),
         ),
+        (route) => route.isFirst,
       );
     } else if (status == 'CANCELLED' ||
         status == 'CANCELED' ||
@@ -652,22 +656,34 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
                     const SizedBox(height: 10),
                     AppPrimaryButton(
                       label: 'Full Trip Tracking',
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => RideInProgressScreen(
-                            rideId: widget.rideId,
-                            driverName: name,
-                            driverPhone: widget.driverPhone,
-                            vehicleModel: vehicle,
-                            plateNumber: plate,
-                            driverProfileImage: widget.driverProfileImage,
-                            pickupLatLng: _pickupPoint,
-                            destinationLatLng: widget.destinationLatLng,
-                            destinationLabel: widget.destinationLabel,
-                            fareNgn: _fareNgn,
+                      onPressed: () {
+                        // Same rules as the automatic transition: trip screen
+                        // becomes the top route, this screen stops polling.
+                        _navigated = true;
+                        _pollTimer?.cancel();
+                        _statusSub?.cancel();
+                        _locationSub?.cancel();
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute<void>(
+                            builder: (_) => RideInProgressScreen(
+                              rideId: widget.rideId,
+                              driverName: name,
+                              driverPhone: widget.driverPhone,
+                              vehicleModel: vehicle,
+                              plateNumber: plate,
+                              driverProfileImage: widget.driverProfileImage,
+                              pickupLatLng: _pickupPoint,
+                              destinationLatLng: widget.destinationLatLng,
+                              destinationLabel: widget.destinationLabel,
+                              fareNgn: _fareNgn,
+                              paymentMethod: widget.paymentMethod,
+                              pickupAddress: widget.pickupLabel,
+                              dropoffAddress: widget.destinationLabel,
+                            ),
                           ),
-                        ),
-                      ),
+                          (route) => route.isFirst,
+                        );
+                      },
                     ),
                   ],
                 ),

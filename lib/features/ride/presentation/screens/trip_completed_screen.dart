@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/config/api_config.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/fare_parser.dart';
 import '../../../../core/widgets/app_primary_button.dart';
 import '../../../rider/presentation/screens/rider_home_shell.dart';
 import '../widgets/ride_payment_sheet.dart';
@@ -35,10 +38,30 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
   late bool _isPaymentConfirmed;
   final bool _isProcessingPayment = false;
 
+  /// Final bill, refreshed from the backend on mount so the receipt always
+  /// matches the driver's trip summary (never the pre-request estimate).
+  double? _fareNgn;
+
   @override
   void initState() {
     super.initState();
     _isPaymentConfirmed = widget.isPaymentConfirmed;
+    _fareNgn = widget.fareNgn;
+    _refreshFare();
+  }
+
+  Future<void> _refreshFare() async {
+    final id = widget.rideId;
+    if (id == null || id.isEmpty) return;
+    try {
+      final res = await ApiClient.instance.get(ApiConfig.rideStatus(id));
+      final fare = FareParser.finalFareNgn(res);
+      if (fare != null && fare > 0 && mounted) {
+        setState(() => _fareNgn = fare);
+      }
+    } catch (_) {
+      // Keep the fare passed in by the trip screen.
+    }
   }
 
   String _cleanAddress(String? address, String fallback) {
@@ -68,7 +91,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
     return Icons.payments_outlined;
   }
   Future<void> _payWithPaystack() async {
-    final fare = widget.fareNgn ?? 0.0;
+    final fare = _fareNgn ?? widget.fareNgn ?? 0.0;
     await RidePaymentSheet.show(
       context,
       rideId: widget.rideId,
@@ -88,9 +111,8 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fareText = widget.fareNgn != null
-        ? '₦${widget.fareNgn!.toStringAsFixed(0)}'
-        : '—';
+    final fareNgn = _fareNgn ?? widget.fareNgn;
+    final fareText = fareNgn != null ? '₦${fareNgn.toStringAsFixed(0)}' : '—';
     final name = widget.driverName ?? 'Adeola Johnson';
     final cleanPickup = _cleanAddress(widget.pickupAddress, 'Wurukum Roundabout, Makurdi');
     final cleanDropoff = _cleanAddress(widget.dropoffAddress, 'High Level Market, Makurdi');
