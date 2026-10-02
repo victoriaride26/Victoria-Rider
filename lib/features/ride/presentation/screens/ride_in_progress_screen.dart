@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,18 +14,20 @@ import '../../../../core/services/rider_socket_service.dart';
 import '../../../../core/services/rider_chat_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/fare_parser.dart';
-import '../../../../core/widgets/app_back_button.dart';
+import '../../../../core/utils/wait_threshold_parser.dart';
 import '../../../../core/widgets/driver_avatar.dart';
 import '../../../../core/widgets/mapbox_map_view.dart';
 import '../../../rider/presentation/screens/rider_home_shell.dart';
+import '../../data/support_contacts.dart';
 import '../widgets/in_ride_chat_sheet.dart';
 import '../widgets/ride_payment_sheet.dart';
+import '../widgets/support_contacts_sheet.dart';
 import 'trip_completed_screen.dart';
 
 /// R-11 — Ride in Progress: active map tracking the vehicle towards destination.
 ///
 /// Rider actions available during a trip:
-///  • **End Trip Early** (two-step) — stopovers are now added at request time
+///  • **Request Early Drop** (two-step) — stopovers are now added at request time
 ///    (max 2, via plus button under destination) for upfront fare calculation.
 ///     1. POST /rides/{id}/early-dropoff { lat, lng, reason } → backend recalculates fare, notifies driver
 ///     2. Rider confirms new fare → POST /rides/{id}/early-dropoff/confirm → driver pulls over & completes
@@ -84,7 +87,30 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   DateTime? _stopoverTimerStart;
   Timer? _stopoverUiTimer;
   int _stopoverElapsedSeconds = 0;
-  int _stopoverWaitDuration = 180; // Defaults to 180s, updated via backend events
+
+  /// Free-wait window for a stop-over in seconds, taken from the backend
+  /// payload. `null` until a payload supplies one — [_freeWaitSeconds] then
+  /// falls back to a display-only default so the UI can still render.
+  int? _stopoverWaitDuration;
+
+  /// Free-wait window the UI displays and the elapsed timer compares against:
+  /// the backend value when known, otherwise the display fallback.
+  int get _freeWaitSeconds => (_stopoverWaitDuration ?? 0) > 0
+      ? _stopoverWaitDuration!
+      : WaitThresholdParser.fallbackSeconds;
+
+  /// Reads the backend's free-wait window out of an event/status payload.
+  /// Returns true when a usable value was found, so the caller can rebuild.
+  bool _applyWaitThreshold(dynamic payload, {required bool allowEventKeys}) {
+    final seconds =
+        WaitThresholdParser.thresholdSeconds(payload, allowEventKeys: allowEventKeys) ??
+            // Silent payload → the window the estimate published (arrival
+            // dialog runs before `ride:stopover:timer:start` delivers its own).
+            WaitThresholdParser.estimateSeconds;
+    if (seconds == null || seconds == _stopoverWaitDuration) return false;
+    _stopoverWaitDuration = seconds;
+    return true;
+  }
 
   bool _navigated = false;
   bool _terminating = false;
@@ -132,6 +158,9 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         final decoded = response as Map<String, dynamic>?;
         final data = decoded?['data'] as Map<String, dynamic>? ?? decoded;
         if (data != null && mounted) {
+          // Seed the free-wait window from the ride's own status payload so
+          // the first arrival dialog is backend-driven, not a 180s guess.
+          _applyWaitThreshold(data, allowEventKeys: false);
           setState(() {
             _stops = data['stops'] ?? data['stopovers'] ?? [];
           });
@@ -269,6 +298,15 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         final incomingId = (data['rideId'] ?? data['id'] ?? data['ride']?['id'])?.toString();
         if (incomingId != null && incomingId.isNotEmpty && incomingId != widget.rideId) return;
         final rawType = (data['type'] ?? data['event'] ?? data['status'] ?? '').toString().toLowerCase();
+        // The threshold must be read BEFORE the handler runs — otherwise the
+        // arrival dialog/snackbar would still show the previous value. Generic
+        // wait keys are only trusted here, not on `timer:completed`, where
+        // they mean elapsed time rather than the free-wait window.
+        final allowEventKeys = !rawType.contains('completed');
+        if (_applyWaitThreshold(data, allowEventKeys: allowEventKeys) &&
+            mounted) {
+          setState(() {});
+        }
         if (rawType.contains('confirmation_requested')) {
           _handleStopoverConfirmationRequested(data);
         } else if (rawType.contains('confirmed')) {
@@ -281,14 +319,6 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           _handleStopoverConfirmed(data);
         } else {
           _handleStopoverConfirmationRequested(data);
-        }
-        
-        final wdRaw = data['waitingTimeSeconds'] ?? data['waitingTime'] ?? data['waitSeconds'];
-        if (wdRaw is num) {
-          setState(() { _stopoverWaitDuration = wdRaw.toInt(); });
-        } else if (wdRaw is String) {
-          final parsed = int.tryParse(wdRaw);
-          if (parsed != null) setState(() { _stopoverWaitDuration = parsed; });
         }
       });
 
@@ -350,12 +380,11 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           status == 'PAYMENT_PENDING') {
         _handleRideTerminated(data ?? {});
       } else if (mounted) {
+        // Ride-level payloads only carry explicitly threshold-named keys —
+        // `waitingTimeSeconds` here is elapsed time, not the free window.
+        _applyWaitThreshold(data, allowEventKeys: false);
         setState(() {
           _stops = data?['stops'] ?? data?['stopovers'] ?? _stops;
-          
-          final wdRaw = data?['waitingTimeSeconds'] ?? data?['waitingTime'] ?? data?['waitSeconds'];
-          if (wdRaw is num) _stopoverWaitDuration = wdRaw.toInt();
-          else if (wdRaw is String) _stopoverWaitDuration = int.tryParse(wdRaw) ?? _stopoverWaitDuration;
         });
 
         _updateLiveFare(data);
@@ -372,20 +401,84 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   /// rider dialog saying "Stop 1 / Stop 2" — the same numbers the driver taps.
   int _stopDisplayNumber(int index) => index >= 1 ? index : index + 1;
 
+  /// Resolves the real address of a stop-over so the arrival dialog can say
+  /// "Stop 2: High Level Makurdi" instead of a placeholder. Prefers the socket
+  /// payload (its `stop` object carries `address` / `location.address`), then
+  /// the `stops` array shipped with the event, then this screen's own stop list
+  /// (matched by waypoint index, falling back to list position).
+  String _stopAddress(Map<String, dynamic> data, int stopIndex) {
+    String text(dynamic value) => value == null ? '' : value.toString().trim();
+    bool usable(String value) => value.isNotEmpty && value.toLowerCase() != 'the stop';
+
+    for (final key in const ['address', 'stopAddress', 'stopAddressLine', 'streetAddress']) {
+      final value = text(data[key]);
+      if (usable(value)) return value;
+    }
+
+    String? fromStopObject(dynamic stop) {
+      if (stop is! Map) return usable(text(stop)) ? text(stop) : null;
+      for (final field in const ['address', 'stopAddress', 'formattedAddress', 'name']) {
+        final value = text(stop[field]);
+        if (usable(value)) return value;
+      }
+      final location = stop['location'] ?? stop['stopLocation'];
+      if (location is Map) {
+        final value = text(location['address'] ?? location['name']);
+        if (usable(value)) return value;
+      }
+      return null;
+    }
+
+    for (final key in const ['stop', 'stopover', 'stopOver', 'location', 'stopLocation', 'waypoint']) {
+      final value = fromStopObject(data[key]);
+      if (value != null) return value;
+    }
+
+    final sources = <dynamic>[
+      if (data['stops'] is List) data['stops'],
+      _stops,
+    ];
+    for (final source in sources) {
+      if (source is! List) continue;
+      Map<String, dynamic>? byIndex;
+      Map<String, dynamic>? byPosition;
+      for (var position = 0; position < source.length; position++) {
+        final entry = source[position];
+        if (entry is! Map) continue;
+        final raw = entry['index'] ?? entry['stopIndex'];
+        final parsed = raw is int ? raw : int.tryParse('${raw ?? ''}');
+        if (parsed == stopIndex) byIndex = Map<String, dynamic>.from(entry);
+        if (position == _stopDisplayNumber(stopIndex) - 1) {
+          byPosition = Map<String, dynamic>.from(entry);
+        }
+      }
+      for (final stop in [byIndex, byPosition]) {
+        if (stop == null) continue;
+        final value = fromStopObject(stop);
+        if (value != null) return value;
+      }
+    }
+    return '';
+  }
+
   Future<void> _handleStopoverConfirmationRequested(Map<String, dynamic> data) async {
     if (!mounted || _navigated) return;
     final rideId = (data['rideId'] ?? data['id'] ?? widget.rideId)?.toString() ?? widget.rideId ?? '';
     final idxRaw = data['index'] ?? data['stopIndex'] ?? 0;
     final stopIndex = idxRaw is int ? idxRaw : int.tryParse(idxRaw.toString()) ?? 0;
-    final address = (data['address'] ?? data['stopAddress'] ?? (data['location'] is Map ? (data['location'] as Map)['address'] : null) ?? 'the stop')?.toString() ?? 'the stop';
-    final waitThreshold = _stopoverWaitDuration > 0 ? _stopoverWaitDuration : 180;
+    final address = _stopAddress(data, stopIndex);
+    final waitThreshold = _freeWaitSeconds;
+    final waitLabel = WaitThresholdParser.label(waitThreshold);
+    final arrivedLine = address.isEmpty
+        ? 'Your driver has arrived at Stop ${_stopDisplayNumber(stopIndex)}. Please confirm to start the $waitLabel free wait.'
+        : 'Your driver has arrived at Stop ${_stopDisplayNumber(stopIndex)}: $address. Please confirm to start the $waitLabel free wait.';
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Driver Arrived at Stop'),
-        content: Text('Your driver has arrived at Stop ${_stopDisplayNumber(stopIndex)}: $address. Please confirm to start the ${(waitThreshold / 60).toInt()}-minute free wait.'),
+        content: Text(arrivedLine),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Not Yet')),
           FilledButton(
@@ -396,13 +489,19 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (!mounted) return;
+    if (confirmed != true) {
+      // "Not Yet" → tell the backend so the driver's stop goes back to pending
+      // and they can press Arrive again at the real spot.
+      await _rejectStopArrival(rideId, stopIndex);
+      return;
+    }
     try {
       await ApiClient.instance.post(ApiConfig.rideStopConfirm(rideId, stopIndex));
       if (!mounted) return;
-      final waitThreshold = _stopoverWaitDuration > 0 ? _stopoverWaitDuration : 180;
+      final waitThreshold = _freeWaitSeconds;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Stop confirmed — ${(waitThreshold / 60).toInt()}-minute timer started.'), backgroundColor: AppColors.primary),
+        SnackBar(content: Text('Stop confirmed — ${WaitThresholdParser.label(waitThreshold)} timer started.'), backgroundColor: AppColors.primary),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -410,6 +509,35 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to confirm stop.'), backgroundColor: AppColors.error));
+    }
+  }
+
+  /// "Not Yet" → POST /rides/{id}/stops/{index}/reject. The backend reverts the
+  /// waypoint to `pending` and broadcasts `ride:stopover:arrival_rejected` so
+  /// the driver's "Arrive" button becomes available again.
+  Future<void> _rejectStopArrival(String rideId, int stopIndex) async {
+    try {
+      await ApiClient.instance.post(ApiConfig.rideStopReject(rideId, stopIndex));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("We've let your driver know you're not ready yet."),
+          backgroundColor: AppColors.primary,
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not notify your driver. Please try again.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
     }
   }
 
@@ -424,10 +552,15 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     if (!mounted) return;
     _stopoverUiTimer?.cancel();
     _stopoverTimerStart = DateTime.now();
-    // Try to use server arrivedAt if provided
-    final arrivedAtRaw = data['arrivedAt'] ?? data['arrived_at'];
-    if (arrivedAtRaw is String) {
-      final parsed = DateTime.tryParse(arrivedAtRaw);
+    // The backend stamps `startTime` on `ride:stopover:timer:start` (the
+    // moment the Rider confirmed the arrival) — prefer it over local clock,
+    // then fall back to older `arrivedAt` payloads.
+    final startRaw = data['startTime'] ??
+        data['start_time'] ??
+        data['arrivedAt'] ??
+        data['arrived_at'];
+    if (startRaw is String) {
+      final parsed = DateTime.tryParse(startRaw);
       if (parsed != null) _stopoverTimerStart = parsed;
     }
     setState(() {
@@ -439,9 +572,9 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       final elapsed = DateTime.now().difference(_stopoverTimerStart!).inSeconds;
       if (mounted) setState(() => _stopoverElapsedSeconds = elapsed);
     });
-    final waitThreshold = _stopoverWaitDuration > 0 ? _stopoverWaitDuration : 180;
+    final waitThreshold = _freeWaitSeconds;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Wait timer started — ${(waitThreshold / 60).toInt()} minutes free.'), backgroundColor: AppColors.primary),
+      SnackBar(content: Text('Wait timer started — ${WaitThresholdParser.shortLabel(waitThreshold)} free.'), backgroundColor: AppColors.primary),
     );
   }
 
@@ -462,12 +595,13 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     }
     _stopoverUiTimer?.cancel();
     if (!mounted) return;
-    final waitThreshold = _stopoverWaitDuration > 0 ? _stopoverWaitDuration : 180;
-    final minutesOver = waitingSeconds > waitThreshold ? ((waitingSeconds - waitThreshold) / 60).ceil() : 0;
-    final msg = waitingSeconds <= waitThreshold
-        ? 'Stop completed within free time.'
-        : 'Stop completed — $waitingSeconds sec total, $minutesOver min over free time. Extra charge: ₦${extraCharge.toStringAsFixed(0)}';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: waitingSeconds > waitThreshold ? AppColors.error : AppColors.primary));
+    final waitThreshold = _freeWaitSeconds;
+    final overSeconds =
+        waitingSeconds > waitThreshold ? waitingSeconds - waitThreshold : 0;
+    final msg = overSeconds == 0
+        ? 'Stop completed within the ${WaitThresholdParser.label(waitThreshold)} free wait.'
+        : 'Stop completed — $waitingSeconds sec total, ${WaitThresholdParser.shortLabel(overSeconds)} over free time. Extra charge: ₦${extraCharge.toStringAsFixed(0)}';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: overSeconds == 0 ? AppColors.primary : AppColors.error));
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -508,20 +642,27 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // End Trip Early — two-step early drop-off flow
-  // Step 1: POST /rides/{id}/early-dropoff { lat, lng, reason }
+  // Request Early Drop — two-step early drop-off flow
+  // Step 1: POST /rides/{id}/early-dropoff { lat, lng, reason } → driver popup
   // Step 2: Rider confirms fare → POST /rides/{id}/early-dropoff/confirm
   // ─────────────────────────────────────────────────────────────────
   
   Future<void> _requestEarlyDropoff() async {
     if (widget.rideId == null || _earlyDropoffRequested) return;
 
+    // Step 0 — Confirm / Cancel before anything is sent. On Confirm the rider
+    // POSTs /rides/{id}/early-dropoff; the driver immediately gets a popup
+    // modal, and the recalculated fare comes back over the socket for step 2
+    // (/early-dropoff/confirm).
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('End Trip?'),
-        content: const Text('Are you sure you want to end this trip now?'),
+        title: const Text('Request Early Drop?'),
+        content: const Text(
+          'Your driver will be notified that you want to end the trip at your '
+          'current location. You will see the updated fare before it is charged.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -530,7 +671,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('End Trip'),
+            child: const Text('Confirm'),
           ),
         ],
       ),
@@ -543,22 +684,61 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     });
 
     try {
-      await ApiClient.instance.post(ApiConfig.rideComplete(widget.rideId!));
+      final dropoff = await _currentDropoffPoint();
+      await ApiClient.instance.post(
+        ApiConfig.rideEarlyDropoff(widget.rideId!),
+        body: {
+          'latitude': dropoff.latitude,
+          'longitude': dropoff.longitude,
+          'reason': 'Rider requested early drop-off',
+        },
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Early drop-off requested — your driver has been notified.',
+            ),
+            backgroundColor: AppColors.primary,
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error));
         setState(() {
           _earlyDropoffRequested = false;
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not request early drop-off: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
       }
       return;
     }
 
-    if (mounted) {
-      _handleRideTerminated({
-        'status': 'COMPLETED',
-      });
-    }
+    // The driver's popup + the updated fare arrive over the socket; the fare
+    // dialog then POSTs /early-dropoff/confirm and finishes the trip.
+  }
+
+  /// Early drop-off point: the live vehicle position (the rider is in the car),
+  /// then the device GPS, then the original pickup as a last resort.
+  Future<LatLng> _currentDropoffPoint() async {
+    final driver = _driverPoint;
+    if (driver != null) return driver;
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 5),
+        ),
+      );
+      return LatLng(position.latitude, position.longitude);
+    } catch (_) {}
+    return widget.pickupLatLng ??
+        widget.destinationLatLng ??
+        const LatLng(7.7337, 8.5211);
   }
 
   Future<void> _handleSupportAction(String endpoint, String title) async {
@@ -600,112 +780,39 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
       final res = await ApiClient.instance.get(endpoint);
       dismissDialog();
       if (!mounted) return;
-
-      if (res != null) {
-        final data = res['data'] ?? res;
-        final name = data['name']?.toString() ?? title;
-        final location = data['location']?.toString();
-        final phone = data['phone']?.toString();
-        final whatsapp = data['whatsappNumber']?.toString() ?? data['whatsapp']?.toString();
-
-        if (mounted) {
-          showModalBottomSheet(
-            context: context,
-            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-            builder: (ctx) {
-              return SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                      if (location != null && location.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Icon(Icons.location_on, size: 16, color: AppColors.onSurfaceVariant),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(location, style: const TextStyle(color: AppColors.onSurfaceVariant))),
-                          ],
-                        ),
-                      ],
-                      const SizedBox(height: 24),
-                      if (phone != null && phone.isNotEmpty)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const CircleAvatar(
-                            backgroundColor: AppColors.primaryContainer,
-                            child: Icon(Icons.phone, color: AppColors.primary),
-                          ),
-                          title: const Text('Phone Number'),
-                          subtitle: Text(phone, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          onTap: () async {
-                            final url = Uri.parse('tel:$phone');
-                            try {
-                              if (await canLaunchUrl(url)) await launchUrl(url);
-                            } catch (_) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Could not open the dialer.')),
-                                );
-                              }
-                            }
-                          },
-                        ),
-                      if (whatsapp != null && whatsapp.isNotEmpty)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const CircleAvatar(
-                            backgroundColor: Colors.green,
-                            child: Icon(Icons.chat, color: Colors.white),
-                          ),
-                          title: const Text('WhatsApp'),
-                          subtitle: Text(whatsapp, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          onTap: () async {
-                            final url = Uri.parse('https://wa.me/${whatsapp.replaceAll(RegExp(r'[^0-9]'), '')}');
-                            try {
-                              if (await canLaunchUrl(url)) {
-                                await launchUrl(url, mode: LaunchMode.externalApplication);
-                              }
-                            } catch (_) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Could not open WhatsApp.')),
-                                );
-                              }
-                            }
-                          },
-                        ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(),
-                          child: const Text('Close'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        }
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Support contact is unavailable right now. Please try again.'),
-          ),
-        );
-      }
+      // Both endpoints return `data: [ … ]` — a list, not a single object.
+      _showSupportModal(title, parseSupportContacts(res));
     } catch (e) {
       dismissDialog();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error contacting support: $e')));
-      }
+      if (!mounted) return;
+      _showSupportModal(
+        title,
+        const [],
+        errorMessage: 'Could not load $title contacts right now. Please try again.',
+      );
     }
+  }
+
+  /// Every outcome — contacts, empty state or fetch error — is a modal, as
+  /// required for the Emergency / Customer Care buttons.
+  void _showSupportModal(
+    String title,
+    List<SupportContact> contacts, {
+    String? errorMessage,
+  }) {
+    if (!mounted || _navigated) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SupportContactsSheet(
+        title: title,
+        contacts: contacts,
+        errorMessage: errorMessage,
+      ),
+    );
   }
 
 
@@ -760,7 +867,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Confirm End Trip'),
+            child: const Text('Confirm Early Drop'),
           ),
         ],
       ),
@@ -1060,13 +1167,17 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                 polylines: polylines,
               ),
             ),
+            // No back button while a trip is in progress: the route stays on
+            // top of the stack (PopScope below blocks system back too), so the
+            // only way out is ending the trip or cancelling with confirmation.
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
               left: 16,
               child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: AppColors.surface.withValues(alpha: 0.9),
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.15),
@@ -1075,7 +1186,20 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                     ),
                   ],
                 ),
-                child: AppBackButton(onPressed: _handleBack),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.shield_outlined, size: 14, color: AppColors.primary),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Trip in progress',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             DraggableScrollableSheet(
@@ -1201,7 +1325,8 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                             ListenableBuilder(
                               listenable: RiderChatService.instance,
                               builder: (context, _) {
-                                final unread = RiderChatService.instance.unreadCount;
+                                final unread = RiderChatService.instance
+                                    .unreadFor(widget.rideId);
                                 return IconButton(
                                   onPressed: () {
                                     InRideChatSheet.show(
@@ -1368,7 +1493,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                         if (_stopoverTimerActive || _stopoverElapsedSeconds > 0) ...[
                           Builder(
                             builder: (context) {
-                              final waitThreshold = _stopoverWaitDuration > 0 ? _stopoverWaitDuration : 180;
+                              final waitThreshold = _freeWaitSeconds;
                               return Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                 decoration: BoxDecoration(
@@ -1391,7 +1516,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            _stopoverElapsedSeconds > waitThreshold ? 'Extra wait charge applies' : 'Free wait — ${(waitThreshold / 60).toInt()} min',
+                                            _stopoverElapsedSeconds > waitThreshold ? 'Extra wait charge applies' : 'Free wait — ${WaitThresholdParser.shortLabel(waitThreshold)}',
                                             style: TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w700,
@@ -1400,7 +1525,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
-                                            '${(_stopoverElapsedSeconds ~/ 60).toString().padLeft(1, '0')}:${(_stopoverElapsedSeconds % 60).toString().padLeft(2, '0')} elapsed${_stopoverElapsedSeconds > waitThreshold ? ' — ${((_stopoverElapsedSeconds - waitThreshold) / 60).ceil()} min over' : ''}',
+                                            '${(_stopoverElapsedSeconds ~/ 60).toString().padLeft(1, '0')}:${(_stopoverElapsedSeconds % 60).toString().padLeft(2, '0')} elapsed${_stopoverElapsedSeconds > waitThreshold ? ' — ${WaitThresholdParser.shortLabel(_stopoverElapsedSeconds - waitThreshold)} over' : ''}',
                                             style: const TextStyle(fontSize: 11, color: AppColors.onSurfaceVariant),
                                           ),
                                         ],
@@ -1488,7 +1613,9 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                                         )
                                       : const Icon(Icons.flag_outlined, size: 18),
                                   label: Text(
-                                    _earlyDropoffRequested ? 'Ending…' : 'End Trip',
+                                    _earlyDropoffRequested
+                                        ? 'Drop Requested'
+                                        : 'Request Early Drop',
                                   ),
                                   style: FilledButton.styleFrom(
                                     backgroundColor: AppColors.error,

@@ -92,6 +92,18 @@ abstract final class ApiConfig {
   static String rideStopConfirm(String rideId, int index) =>
       '$apiV1/rides/$rideId/stops/$index/confirm';
 
+  /// Rider taps "Not Yet" on the stop-arrival prompt: POST /rides/{id}/stops/{index}/reject
+  /// Reverts the waypoint to `pending`; backend broadcasts
+  /// `ride:stopover:arrival_rejected` so the driver can press Arrive again.
+  static String rideStopReject(String rideId, int index) =>
+      '$apiV1/rides/$rideId/stops/$index/reject';
+
+  /// Currently active ride for the authenticated user (Rider or Driver).
+  /// Returns the most recent ride that is NOT `COMPLETED` / `CANCELLED` —
+  /// used on launch/foreground to recover a payment (PAYMENT_PENDING) or an
+  /// interrupted trip (REQUESTED / ARRIVED / IN_PROGRESS).
+  static const String rideCurrent = '$apiV1/rides/current';
+
   // --- Locations ---
   static const String locationsCountries = '$apiV1/locations/countries';
   static const String locationsStates = '$apiV1/locations/states';

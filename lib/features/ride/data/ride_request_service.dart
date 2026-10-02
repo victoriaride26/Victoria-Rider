@@ -6,6 +6,7 @@ import '../../../core/models/geocoding_result.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/services/directions_service.dart';
 import '../../../core/utils/fare_parser.dart';
+import '../../../core/utils/wait_threshold_parser.dart';
 
 /// Summary returned after resolving the route between two points.
 class RideEstimate {
@@ -178,6 +179,8 @@ class RideRequestService {
           '[RideRequestService] Backend estimate verified: fare=NGN$fare dist=${distance.toStringAsFixed(1)} km dur=$duration min',
         );
 
+        final adjustedFare = fare + _stopFeesNgn(response, effectiveStops.length);
+
         return RideEstimate(
           pickupLabel: pickupLabel,
           destinationLabel: destinationLabel,
@@ -185,7 +188,7 @@ class RideRequestService {
           destinationLatLng: destination,
           distanceKm: distance,
           durationMinutes: duration,
-          fareNgn: fare,
+          fareNgn: adjustedFare,
         );
       }
     }
@@ -194,6 +197,74 @@ class RideRequestService {
     throw Exception(
       'Estimated fare could not be obtained from VT Rides. Ride request aborted.',
     );
+  }
+
+  /// Backend's standard per-stop fee (₦200), matching the `Stopovers (n × ₦200)`
+  /// fallback the driver app renders when a ride carries no pricing snapshot.
+  static const int _defaultPerStopFeeNgn = 200;
+
+  /// Stop-over fees to show the rider *before* the ride exists.
+  ///
+  /// `POST /rides/estimate` does not price stop-overs — its request schema only
+  /// accepts `pickupLatitude/pickupLongitude/dropoffLatitude/dropoffLongitude/
+  /// vehicleType`, so the `stops` array sent alongside is dropped and every
+  /// estimate comes back as the base fare. The rider therefore sees a number
+  /// that never changes when stops are added, and that differs from what
+  /// `/rides/request` actually creates.
+  ///
+  /// Returns 0 as soon as the backend starts pricing stops itself (it will then
+  /// echo `stops` / a stop-fee field), so there is never a double count.
+  static double _stopFeesNgn(dynamic payload, int stopCount) {
+    if (stopCount <= 0 || _backendPricedStops(payload)) return 0;
+    return (_perStopFeeKobo(payload) * stopCount) / 100.0;
+  }
+
+  /// True when the estimate response itself carries stop-over pricing.
+  static bool _backendPricedStops(dynamic payload) {
+    if (payload is! Map) return false;
+    final map = Map<String, dynamic>.from(payload);
+    final data = map['data'] is Map
+        ? Map<String, dynamic>.from(map['data'] as Map)
+        : map;
+    final fare = data['fare'] is Map
+        ? Map<String, dynamic>.from(data['fare'] as Map)
+        : const <String, dynamic>{};
+    final keys = {...map.keys, ...data.keys, ...fare.keys}.map((k) => k.toLowerCase());
+    return keys.any(
+      (k) =>
+          k.contains('stopover') ||
+          k.contains('perstop') ||
+          k.contains('stopfee') ||
+          k == 'stops' ||
+          k == 'stopcount',
+    );
+  }
+
+  static int _perStopFeeKobo(dynamic payload) {
+    if (payload is Map) {
+      final map = Map<String, dynamic>.from(payload);
+      final data = map['data'] is Map
+          ? Map<String, dynamic>.from(map['data'] as Map)
+          : map;
+      final fare = data['fare'] is Map
+          ? Map<String, dynamic>.from(data['fare'] as Map)
+          : const <String, dynamic>{};
+      for (final raw in [
+        data['appliedPerStopFeeKoba'],
+        data['perStopFeeKoba'],
+        data['stopFeeKoba'],
+        fare['appliedPerStopFeeKoba'],
+        fare['perStopFeeKoba'],
+        data['appliedPerStopFee'],
+        data['perStopFee'],
+        data['stopFee'],
+        fare['appliedPerStopFee'],
+        fare['perStopFee'],
+      ]) {
+        if (raw is num && raw > 0) return FareParser.toKobo(raw);
+      }
+    }
+    return _defaultPerStopFeeNgn * 100;
   }
 
   // requestRide
@@ -272,7 +343,12 @@ class RideRequestService {
       // Parse the ride ID — response schema is not fully documented in the
       // OpenAPI spec, so we probe the most common key patterns.
       String? rideId;
-      if (response is Map<String, dynamic>) {
+    // The estimate is where the backend publishes the stop-over free-wait
+    // window; keep it so the arrival dialog (which fires before
+    // `ride:stopover:timer:start`) can quote the configured value.
+    WaitThresholdParser.seedFromEstimate(response);
+
+    if (response is Map<String, dynamic>) {
       final data = FareParser.unwrap(response);
         rideId =
             data['rideId']?.toString() ??

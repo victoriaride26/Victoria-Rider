@@ -8,6 +8,7 @@ import 'core/services/background_location_service.dart';
 import 'core/services/fcm_service.dart';
 import 'core/services/notification_tray_service.dart';
 import 'core/services/places_storage_service.dart';
+import 'core/services/rider_chat_service.dart';
 import 'features/notifications/data/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/screens/splash_screen.dart';
@@ -33,6 +34,12 @@ Future<void> main() async {
   // Curated notifications — SharedPreferences backed, survives restart.
   try {
     await RiderNotificationService.instance.init();
+  } catch (_) {}
+
+  // Chat — hydrate saved threads and attach the socket listeners up-front so
+  // an incoming message is never missed before a chat screen opens.
+  try {
+    unawaited(RiderChatService.instance.ensureStarted());
   } catch (_) {}
 
   // Push notifications (Firebase Cloud Messaging).

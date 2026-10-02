@@ -7,6 +7,8 @@ import '../../../../core/utils/fare_parser.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../rider/presentation/widgets/rider_scaffold.dart';
 import 'destination_search_screen.dart';
+import 'ride_in_progress_screen.dart';
+import 'trip_completed_screen.dart';
 
 /// R-14 — Ride History with Dynamic Live Transactions & Empty States.
 class RideHistoryScreen extends StatefulWidget {
@@ -199,6 +201,143 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
     return '₦${amount.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
   }
 
+  /// Opens a history row according to the ride's status:
+  ///  • IN_PROGRESS (or any live state) → the Trip in Progress screen, which
+  ///    re-loads the ride and shows the current locations
+  ///  • PAYMENT_PENDING → the payment screen
+  ///  • COMPLETED / CANCELLED → trip details in a modal
+  void _openRide(RideHistoryItem item) {
+    final status = item.status.toUpperCase();
+
+    if (status.contains('PAYMENT')) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => TripCompletedScreen(
+            rideId: item.id,
+            fareNgn: item.displayFareNgn,
+            pickupAddress: item.pickupAddress,
+            dropoffAddress: item.dropoffAddress,
+            isPaymentConfirmed: false,
+          ),
+        ),
+      );
+      return;
+    }
+
+    final isLive = status.contains('IN_PROGRESS') ||
+        status.contains('INPROGRESS') ||
+        status.contains('STARTED') ||
+        status.contains('ARRIVED') ||
+        status.contains('ACCEPTED') ||
+        status.contains('REQUEST') ||
+        status.contains('EARLY') ||
+        status.contains('STOP');
+    if (isLive && item.id.isNotEmpty) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => RideInProgressScreen(
+            rideId: item.id,
+            fareNgn: item.displayFareNgn,
+            pickupAddress: item.pickupAddress,
+            dropoffAddress: item.dropoffAddress,
+            destinationLabel: item.dropoffAddress,
+          ),
+        ),
+      );
+      return;
+    }
+
+    _showTripDetails(item);
+  }
+
+  /// COMPLETED / CANCELLED — and anything without a live screen — open as a
+  /// details modal instead of navigating away from the history list.
+  void _showTripDetails(RideHistoryItem item) {
+    final theme = Theme.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final created = item.createdAt;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Trip Details',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _detailRow(theme, 'Status', item.status),
+                _detailRow(
+                  theme,
+                  'Date',
+                  '${created.day}/${created.month}/${created.year} • '
+                  '${created.hour.toString().padLeft(2, '0')}:'
+                  '${created.minute.toString().padLeft(2, '0')}',
+                ),
+                _detailRow(
+                  theme,
+                  'Pickup',
+                  item.pickupAddress.isNotEmpty ? item.pickupAddress : '—',
+                ),
+                _detailRow(
+                  theme,
+                  'Drop-off',
+                  item.dropoffAddress.isNotEmpty ? item.dropoffAddress : '—',
+                ),
+                _detailRow(theme, 'Fare', _formatCurrency(item.displayFareNgn)),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _detailRow(ThemeData theme, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: AppColors.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -285,7 +424,10 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
               // Ride items or Empty State
               if (displayedList.isNotEmpty) ...[
                 for (final r in displayedList)
-                  Container(
+                  InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => _openRide(r),
+                    child: Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -377,6 +519,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                         ),
                       ],
                     ),
+                  ),
                   ),
               ] else if (_errorMessage != null) ...[
                 Container(

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/navigation/app_router.dart';
+import '../../../../core/services/fcm_service.dart';
 import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
 import 'get_started_screen.dart';
@@ -29,6 +32,10 @@ class _SplashScreenState extends State<SplashScreen> {
     final hasSession = await SessionController.instance.restore();
     if (hasSession && await AppRouter.ensureValidSession()) {
       destination = await AppRouter.resolveDestination();
+      // Re-register the push token on a restored session. Token registration
+      // only ran at login, so a returning rider whose token rotated would
+      // otherwise never receive trip-completed / payment pushes.
+      unawaited(FcmService.instance.syncToken());
     }
     if (!mounted) return;
     AppRouter.pushAndClearStack(context, destination);

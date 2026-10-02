@@ -81,13 +81,18 @@ class RiderNotificationService extends ChangeNotifier {
   static final RiderNotificationService instance = RiderNotificationService._();
 
   static const _prefsKey = 'vr_rider_notifications';
-  bool _initialized = false;
+
+  /// Single hydration shared by the constructor and `init()` — running it
+  /// twice re-inserted every saved notification (and raced a user's Clear all).
+  Future<void>? _loadFuture;
+
   final List<RiderNotification> _items = [];
 
   Future<void> init() => _loadFromPrefs();
 
-  Future<void> _loadFromPrefs() async {
-    if (_initialized) return;
+  Future<void> _loadFromPrefs() => _loadFuture ??= _hydrate();
+
+  Future<void> _hydrate() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_prefsKey);
@@ -113,8 +118,9 @@ class RiderNotificationService extends ChangeNotifier {
       }
     } catch (e) {
       if (kDebugMode) debugPrint('RiderNotificationService load error: $e');
+      // Let a later init() retry instead of staying failed for the session.
+      _loadFuture = null;
     } finally {
-      _initialized = true;
       notifyListeners();
     }
   }

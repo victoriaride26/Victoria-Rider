@@ -615,7 +615,8 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
                           child: ListenableBuilder(
                             listenable: RiderChatService.instance,
                             builder: (context, _) {
-                              final unread = RiderChatService.instance.unreadCount;
+                              final unread =
+                                  RiderChatService.instance.unreadFor(widget.rideId);
                               return OutlinedButton.icon(
                                 onPressed: () {
                                   InRideChatSheet.show(

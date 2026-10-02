@@ -53,6 +53,15 @@ class FcmService {
         debugPrint('[FCM] Notification permissions granted.');
       }
 
+      // Display pushes while the app is in the foreground (iOS) — without
+      // this iOS drops foreground messages, so trip-completed / payment
+      // pushes never reach the rider until they background the app.
+      await messaging.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
       // Fetch FCM Device Token
       _fcmToken = await messaging.getToken();
       if (_fcmToken != null) {

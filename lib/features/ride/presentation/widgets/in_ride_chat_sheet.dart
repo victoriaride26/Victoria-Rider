@@ -43,8 +43,9 @@ class _InRideChatSheetState extends State<InRideChatSheet>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
-    RiderChatService.instance.isChatOpen = true;
-    RiderChatService.instance.markAsRead();
+    // Mark this ride's thread read while the sheet is open — incoming
+    // messages for it then land without bumping the badge.
+    RiderChatService.instance.openChat(widget.rideId);
     RiderChatService.instance.addListener(_onMessagesChanged);
 
     // Ensure socket is joined to this ride room
@@ -53,7 +54,7 @@ class _InRideChatSheetState extends State<InRideChatSheet>
     // Restore chat history from backend on open
     _loadChatHistory();
   }
-  
+
   void _onMessagesChanged() {
     if (mounted) setState(() {});
     _scrollToBottom();
@@ -98,15 +99,19 @@ class _InRideChatSheetState extends State<InRideChatSheet>
             }
             if (text != null && text.isNotEmpty) {
               loaded.add(ChatMessage(
+                id: (item['id'] ?? item['_id'] ?? '')
+                    .toString(),
                 text: text,
                 isMe: sender == 'rider',
                 time: time,
+                rideId: widget.rideId,
+                read: true,
               ));
             }
           }
         }
         if (loaded.isNotEmpty && mounted) {
-          RiderChatService.instance.addHistory(loaded);
+          RiderChatService.instance.addHistory(widget.rideId, loaded);
           _scrollToBottom();
         }
       }
@@ -139,7 +144,7 @@ class _InRideChatSheetState extends State<InRideChatSheet>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    RiderChatService.instance.isChatOpen = false;
+    RiderChatService.instance.closeChat();
     RiderChatService.instance.removeListener(_onMessagesChanged);
     _controller.dispose();
     _scrollController.dispose();
@@ -150,6 +155,9 @@ class _InRideChatSheetState extends State<InRideChatSheet>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final service = RiderChatService.instance;
+    final messages = service.messagesFor(widget.rideId);
+    final peerTyping = service.isPeerTyping(widget.rideId);
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.7 + bottomInset,
@@ -210,7 +218,7 @@ class _InRideChatSheetState extends State<InRideChatSheet>
 
             // Messages
             Expanded(
-              child: RiderChatService.instance.messages.isEmpty
+              child: messages.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -237,9 +245,9 @@ class _InRideChatSheetState extends State<InRideChatSheet>
                   : ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount: RiderChatService.instance.messages.length,
+                      itemCount: messages.length,
                       itemBuilder: (context, index) {
-                        final msg = RiderChatService.instance.messages[index];
+                        final msg = messages[index];
                         return Align(
                           alignment: msg.isMe
                               ? Alignment.centerRight
@@ -277,33 +285,70 @@ class _InRideChatSheetState extends State<InRideChatSheet>
                     ),
             ),
 
-            // Input Bar
+            // Typing indicator + Input Bar
             Container(
               padding: EdgeInsets.fromLTRB(16, 8, 16, 8 + bottomInset),
               decoration: const BoxDecoration(
                 color: AppColors.surfaceContainerLowest,
                 border: Border(top: BorderSide(color: AppColors.surfaceContainerHigh)),
               ),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _sendMessage(),
-                      decoration: const InputDecoration(
-                        hintText: 'Type a message...',
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        filled: false,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12),
-                      ),
+                  if (peerTyping) ...[
+                    Row(
+                      children: [
+                        const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${widget.driverName} is typing…',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  IconButton(
-                    onPressed: _sendMessage,
-                    icon: const Icon(Icons.send_rounded, color: AppColors.primary),
+                    const SizedBox(height: 6),
+                  ],
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _sendMessage(),
+                          onChanged: (value) {
+                            if (value.trim().isEmpty) {
+                              RiderChatService.instance
+                                  .stopTyping(widget.rideId);
+                            } else {
+                              RiderChatService.instance
+                                  .noteTyping(widget.rideId);
+                            }
+                          },
+                          decoration: const InputDecoration(
+                            hintText: 'Type a message...',
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            filled: false,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _sendMessage,
+                        icon: const Icon(Icons.send_rounded, color: AppColors.primary),
+                      ),
+                    ],
                   ),
                 ],
               ),

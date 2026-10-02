@@ -5,6 +5,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../config/api_config.dart';
 import '../network/api_client.dart';
+import '../utils/fare_parser.dart';
 import '../../features/notifications/data/notification_service.dart';
 import 'session_controller.dart';
 
@@ -117,6 +118,10 @@ class RiderSocketService {
   final StreamController<Map<String, dynamic>> _chatMessageController =
       StreamController<Map<String, dynamic>>.broadcast();
 
+  /// Typing indicator events (`ride:typing` / `chat:typing`).
+  final StreamController<Map<String, dynamic>> _typingController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
   final StreamController<Map<String, dynamic>> _paymentPendingController =
       StreamController<Map<String, dynamic>>.broadcast();
 
@@ -157,6 +162,26 @@ class RiderSocketService {
   Stream<Map<String, dynamic>> get onChatMessage =>
       _chatMessageController.stream;
 
+  /// Stream of typing indicators for the active ride room.
+  Stream<Map<String, dynamic>> get onTyping => _typingController.stream;
+
+  /// Ride the app is currently tracking/joined to — used as the conversation
+  /// key when a chat payload omits its `rideId`.
+  String? get activeTrackingRideId => _activeTrackingRideId;
+
+  /// Pushes a chat payload through the same stream as a real
+  /// `ride:chat:receive` event, so tests can drive the chat pipeline
+  /// without a server.
+  @visibleForTesting
+  void debugDispatchChatMessage(Map<String, dynamic> data) =>
+      _chatMessageController.add(data);
+
+  /// Pushes a typing payload through the same stream as a real
+  /// `ride:typing` event.
+  @visibleForTesting
+  void debugDispatchTyping(Map<String, dynamic> data) =>
+      _typingController.add(data);
+
   /// Stream of payment pending events (e.g. for card/transfer payment at trip end).
   Stream<Map<String, dynamic>> get onPaymentPending =>
       _paymentPendingController.stream;
@@ -175,6 +200,71 @@ class RiderSocketService {
 
   /// Stream of dedicated fare update events (ride:fare:updated)
   Stream<Map<String, dynamic>> get onFareUpdated => _fareUpdatedController.stream;
+
+  /// Local notification for a finished trip.
+  ///
+  /// The backend broadcasts the same fact under several names
+  /// (`ride:state {status: COMPLETED}`, `ride:completed`, `ride:ended`, …), so
+  /// the notification id is derived from the ride: the tray posts exactly one
+  /// "Trip Completed" per trip no matter how many of those fire.
+  void _notifyTripCompleted(Map<String, dynamic> data) {
+    final rideId = _rideIdOf(data);
+    RiderNotificationService.instance.insert(
+      RiderNotification(
+        id: rideId.isEmpty
+            ? 'trip_completed_${DateTime.now().millisecondsSinceEpoch}'
+            : 'trip_completed_$rideId',
+        type: RiderNotificationType.tripEnded,
+        title: 'Trip Completed',
+        body: 'Your ride has successfully completed.',
+        createdAt: DateTime.now(),
+      ),
+    );
+  }
+
+  /// Local notification for a verified payment.
+  ///
+  /// The canonical backend event is `payment:completed`
+  /// `{ rideId, amountPaid, message }` — the exact event the driver app
+  /// listens to. The rider used to listen only for `ride:payment_successful`,
+  /// which nothing emits, so this notification never appeared.
+  void _notifyPaymentSuccessful(dynamic data) {
+    final map = data is Map
+        ? Map<String, dynamic>.from(data)
+        : const <String, dynamic>{};
+    final amount = FareParser.scalarNgn(map['amountPaid'] ?? map['amount']);
+    final rideId = _rideIdOf(map);
+    RiderNotificationService.instance.insert(
+      RiderNotification(
+        id: rideId.isEmpty
+            ? 'payment_successful_${DateTime.now().millisecondsSinceEpoch}'
+            : 'payment_successful_$rideId',
+        type: RiderNotificationType.paymentSuccessful,
+        title: 'Payment Successful',
+        body: (amount != null && amount > 0)
+            ? 'Payment of ₦${amount.toStringAsFixed(0)} was verified for your trip.'
+            : 'Your payment was verified successfully.',
+        createdAt: DateTime.now(),
+      ),
+    );
+  }
+
+  String _rideIdOf(Map<String, dynamic> data) {
+    final ride = data['ride'];
+    final id = data['rideId'] ??
+        data['ride_id'] ??
+        data['id'] ??
+        (ride is Map ? (ride['id'] ?? ride['rideId']) : null);
+    return (id ?? '').toString();
+  }
+
+  static bool _isCompletedStatus(dynamic status) {
+    final value = (status ?? '').toString().toUpperCase();
+    return value == 'COMPLETED' ||
+        value == 'COMPLETE' ||
+        value == 'ENDED' ||
+        value == 'END';
+  }
 
   /// Connects to the backend Socket.IO server with the rider's JWT token.
   void connect() {
@@ -250,6 +340,8 @@ class RiderSocketService {
           } else if (status != null && status.isNotEmpty) {
             _statusUpdateController.add(map);
           }
+          // Canonical completion broadcast — must raise the tray notification.
+          if (_isCompletedStatus(status)) _notifyTripCompleted(map);
         }
       });
 
@@ -281,14 +373,21 @@ class RiderSocketService {
       
       _socket!.on('ride:payment_successful', (data) {
         debugPrint('[RiderSocket] Received ride:payment_successful: $data');
-        RiderNotificationService.instance.insert(RiderNotification(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          type: RiderNotificationType.paymentSuccessful,
-          title: 'Payment Successful',
-          body: 'Your payment was successful.',
-          createdAt: DateTime.now(),
-        ));
+        _notifyPaymentSuccessful(data);
       });
+
+      // ── Canonical payment-verified events (same names the driver app
+      //    listens to) ── without these the rider never got the tray entry. ──
+      for (final event in const [
+        'payment:completed',
+        'payment:verified',
+        'payment:success',
+      ]) {
+        _socket!.on(event, (data) {
+          debugPrint('[RiderSocket] Received $event: $data');
+          _notifyPaymentSuccessful(data);
+        });
+      }
 
       // ── 3. Ride status updates ──
       _socket!.on('ride:status:update', (data) {
@@ -297,6 +396,9 @@ class RiderSocketService {
           final map = Map<String, dynamic>.from(data);
           _statusUpdateController.add(map);
           _rideStateController.add(map);
+          if (_isCompletedStatus(map['status'] ?? map['state'])) {
+            _notifyTripCompleted(map);
+          }
         }
       });
 
@@ -306,6 +408,9 @@ class RiderSocketService {
           final map = Map<String, dynamic>.from(data);
           _statusUpdateController.add(map);
           _rideStateController.add(map);
+          if (_isCompletedStatus(map['status'] ?? map['state'])) {
+            _notifyTripCompleted(map);
+          }
         }
       });
 
@@ -315,6 +420,9 @@ class RiderSocketService {
           final map = Map<String, dynamic>.from(data);
           _statusUpdateController.add(map);
           _rideStateController.add(map);
+          if (_isCompletedStatus(map['status'] ?? map['state'])) {
+            _notifyTripCompleted(map);
+          }
         }
       });
 
@@ -327,13 +435,7 @@ class RiderSocketService {
             map['status'] = fallbackStatus;
           }
           if (fallbackStatus == 'COMPLETED') {
-             RiderNotificationService.instance.insert(RiderNotification(
-                id: DateTime.now().millisecondsSinceEpoch.toString(),
-                type: RiderNotificationType.tripEnded,
-                title: 'Trip Completed',
-                body: 'Your ride has successfully completed.',
-                createdAt: DateTime.now(),
-             ));
+            _notifyTripCompleted(map);
           }
           _statusUpdateController.add(map);
           _rideStateController.add(map);
@@ -430,7 +532,22 @@ class RiderSocketService {
       _socket!.on('ride:chat:receive', handleChatMessage);
       _socket!.on('ride:chat:message', handleChatMessage);
       _socket!.on('chat:message', handleChatMessage);
+      _socket!.on('chat:receive', handleChatMessage);
       _socket!.on('ride:message', handleChatMessage);
+      // Some builds relay the sender's own event name into the room.
+      _socket!.on('ride:chat:send', handleChatMessage);
+      _socket!.on('chat:send', handleChatMessage);
+
+      // ── 5b. Typing indicator from the driver ──
+      void handleTyping(dynamic data) {
+        if (data is Map) {
+          _typingController.add(Map<String, dynamic>.from(data));
+        }
+      }
+
+      _socket!.on('ride:typing', handleTyping);
+      _socket!.on('chat:typing', handleTyping);
+      _socket!.on('ride:chat:typing', handleTyping);
 
       // ── 6. Fare Updates ──
       _socket!.on('ride:fare:updated', (data) {
@@ -504,6 +621,24 @@ class RiderSocketService {
         'sender': sender,
       }).catchError((e) => debugPrint('[RiderSocket] HTTP fallback failed: $e'));
     } catch (_) {}
+  }
+
+  /// Broadcasts a typing indicator for the active ride room.
+  /// `typing: false` is sent when the rider clears the composer or sends.
+  void emitTyping({
+    required String rideId,
+    required bool typing,
+    String sender = 'rider',
+  }) {
+    if (_socket == null || !_isConnected || rideId.isEmpty) return;
+    final payload = {
+      'rideId': rideId,
+      'sender': sender,
+      'typing': typing,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+    _socket!.emit('ride:typing', payload);
+    _socket!.emit('chat:typing', payload);
   }
 
   /// Disconnects and cleans up socket resources.
