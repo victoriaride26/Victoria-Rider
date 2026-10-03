@@ -453,6 +453,16 @@ def _match_key(e: dict, strip_words: tuple[str, ...]) -> str:
 PREFER_OVERTURE = {"judgesquarters", "modernmarket", "aperakustadium"}
 PREFER_RADIUS_M = 5000
 
+# Normalised-name keys that must merge even though _match_key differs:
+# {other_source_key: canonical_curated_key}.
+#   digcwelfarequarters   - Wikidata label 'DIGC,Welfare Quarters,Makurdi'
+#                           (user: same place as FMW&H Quarters)
+#   roadsafetyoffice      - Overture 'Road safety office' == Road Safety Junction
+KEY_ALIASES = {
+    "digcwelfarequarters": "fmwhquarters",
+    "roadsafetyoffice": "roadsafetyjunction",
+}
+
 
 def dedupe(entries: list[dict], towns: list[dict]) -> list[dict]:
     """Merge records describing the same place in the same town.
@@ -466,15 +476,19 @@ def dedupe(entries: list[dict], towns: list[dict]) -> list[dict]:
     strip_words = tuple({t["name"] for t in towns} | {"benue", "nigeria"})
     merged: dict[str, dict] = {}
     order: list[str] = []
+
+    def dedupe_key(e: dict) -> tuple[str, str]:
+        k = _match_key(e, strip_words)
+        return (e["locality"], KEY_ALIASES.get(k, k))
+
     for e in entries:
-        match_key = _match_key(e, strip_words)
-        prefer = match_key in PREFER_OVERTURE
+        key = dedupe_key(e)
+        prefer = key[1] in PREFER_OVERTURE
         radius_m = PREFER_RADIUS_M if prefer else 1000
-        key = (e["locality"], match_key)
         hit = None
         for other_id in order:
             o = merged[other_id]
-            if (o["locality"], _match_key(o, strip_words)) != key:
+            if dedupe_key(o) != key:
                 continue
             if haversine_km(e["lat"], e["lng"], o["lat"], o["lng"]) * 1000 <= radius_m:
                 hit = o

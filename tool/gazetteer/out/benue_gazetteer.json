@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "generated_at": "2026-10-03T07:36:13+00:00",
+ "generated_at": "2026-10-03T10:36:18+00:00",
  "state": "Benue",
  "towns": [
   "Makurdi",
@@ -9,7 +9,7 @@
   "Katsina-Ala",
   "Vandeikya"
  ],
- "entry_count": 2020,
+ "entry_count": 2024,
  "sources": [
   {
    "name": "curated",
@@ -92,7 +92,7 @@
    "school": 97,
    "professional-service": 44,
    "dance-club": 7,
-   "district": 12,
+   "district": 14,
    "market": 17,
    "social-or-community-service": 16,
    "settlement": 1,
@@ -106,6 +106,7 @@
    "historic-site": 3,
    "building-or-construction-service": 5,
    "military-site": 3,
+   "landmark": 4,
    "high-school": 2,
    "bar": 17,
    "electronics-store": 9,
@@ -123,7 +124,7 @@
    "media-service": 10,
    "cafe": 4,
    "radio-station": 2,
-   "church": 42,
+   "church": 41,
    "corporate-or-business-office": 10,
    "agricultural-service": 10,
    "automotive-service": 4,
@@ -134,7 +135,7 @@
    "sport-league": 2,
    "music-venue": 2,
    "real-estate-service": 13,
-   "event-or-party-service": 15,
+   "event-or-party-service": 14,
    "environmental-or-ecological-service": 1,
    "government-office": 25,
    "travel-service": 1,
@@ -195,8 +196,7 @@
    "golf-course": 1,
    "lga_seat": 2,
    "stadium-arena": 1,
-   "road": 3,
-   "landmark": 2,
+   "road": 4,
    "brewery": 1,
    "b2b-transportation-and-storage-service": 1,
    "resort": 1,
@@ -204,6 +204,7 @@
    "amusement-park": 1,
    "complementary-and-alternative-medicine": 1,
    "train-station": 1,
+   "junction": 1,
    "family-service": 1,
    "rental-service": 1,
    "clinic": 1
@@ -235,7 +236,7 @@
   "geonames": 655,
   "wikidata": 372,
   "overture": 1002,
-  "curated": 47
+  "curated": 53
  },
  "entries": [
   {
@@ -11690,6 +11691,32 @@
    "notes": "Overture 737bf284-31df-4a3c-a572-c4eb6c277d63; confidence 0.6662754416465759"
   },
   {
+   "id": "ng-benue-makurdi-naf-base",
+   "name": "Airforce Base Makurdi",
+   "aliases": [
+    "NAF Base Makurdi",
+    "Tactical Air Command Makurdi",
+    "Airport Makurdi",
+    "Nigeria Air Force Base Makurdi",
+    "NAF Makurdi"
+   ],
+   "locality": "Makurdi",
+   "lga": "Makurdi",
+   "state": "Benue",
+   "category": "landmark",
+   "lat": 7.705,
+   "lng": 8.595,
+   "precision": "approximate",
+   "verified": false,
+   "sources": [
+    "curated"
+   ],
+   "licenses": [
+    "project-owned"
+   ],
+   "notes": "Draft; coords approximate; same airfield complex as Makurdi Airport (about 0.5 km)"
+  },
+  {
    "id": "ov-caa03707-eb41-4482-9400-e6d80bba5968",
    "name": "Airforce Secondary School, Markudi",
    "aliases": [],
@@ -18410,24 +18437,6 @@
    "notes": "Wikidata Q125398293; instance-of: church building"
   },
   {
-   "id": "wd-Q125398432",
-   "name": "DIGC,Welfare Quarters,Makurdi",
-   "aliases": [],
-   "locality": "Makurdi",
-   "lga": "Makurdi",
-   "state": "Benue",
-   "category": "church",
-   "lat": 7.672965,
-   "lng": 8.538979,
-   "precision": "exact",
-   "verified": false,
-   "sources": [
-    "wikidata"
-   ],
-   "licenses": [],
-   "notes": "Wikidata Q125398432; instance-of: church building"
-  },
-  {
    "id": "ov-5a781315-ff05-440d-86e8-226fc6a9de55",
    "name": "Dinka supermarket",
    "aliases": [],
@@ -20553,6 +20562,31 @@
    "notes": "Overture 53e2ddaa-05e8-468c-8a94-5de50d88d694; confidence 0.35560715198516846"
   },
   {
+   "id": "ng-benue-makurdi-fmwh-quarters",
+   "name": "FMW&H Quarters",
+   "aliases": [
+    "DIGC,Welfare Quarters,Makurdi",
+    "FMW and H Quarters",
+    "Welfare Quarters"
+   ],
+   "locality": "Makurdi",
+   "lga": "Makurdi",
+   "state": "Benue",
+   "category": "district",
+   "lat": 7.672965,
+   "lng": 8.538979,
+   "precision": "approximate",
+   "verified": true,
+   "sources": [
+    "curated",
+    "wikidata"
+   ],
+   "licenses": [
+    "project-owned"
+   ],
+   "notes": "User-confirmed 2026-10-02: FMW&H Quarters == Welfare Quarters; coords copied from Wikidata record; Wikidata Q125398432; instance-of: church building"
+  },
+  {
    "id": "ov-d10f0955-b48f-415d-b36c-7eb07451b374",
    "name": "Fotib Digital Point",
    "aliases": [],
@@ -22541,6 +22575,28 @@
     "CDLA-Permissive-2.0"
    ],
    "notes": "Overture 4df7208e-1218-4f9c-91ac-32eb3c8758bd; confidence 0.7434887290000916"
+  },
+  {
+   "id": "ng-benue-makurdi-hange",
+   "name": "Hange",
+   "aliases": [
+    "Hange District"
+   ],
+   "locality": "Makurdi",
+   "lga": "Makurdi",
+   "state": "Benue",
+   "category": "district",
+   "lat": 7.7136,
+   "lng": 8.5839,
+   "precision": "approximate",
+   "verified": false,
+   "sources": [
+    "curated"
+   ],
+   "licenses": [
+    "project-owned"
+   ],
+   "notes": "Draft; district in NE Makurdi on the Gboko Rd corridor; coords approximate; verify"
   },
   {
    "id": "ov-8f3f5976-c620-4b49-bdb5-8418154fdfae",
@@ -28667,29 +28723,6 @@
    "notes": "Overture 3decd35f-26ef-4d2c-b4a8-46a1a0d1b93b; confidence 0.5384527444839478"
   },
   {
-   "id": "ng-benue-makurdi-naf-base",
-   "name": "NAF Base Makurdi",
-   "aliases": [
-    "Nigeria Air Force Base Makurdi",
-    "NAF Makurdi"
-   ],
-   "locality": "Makurdi",
-   "lga": "Makurdi",
-   "state": "Benue",
-   "category": "landmark",
-   "lat": 7.705,
-   "lng": 8.595,
-   "precision": "approximate",
-   "verified": false,
-   "sources": [
-    "curated"
-   ],
-   "licenses": [
-    "project-owned"
-   ],
-   "notes": "Draft; coords approximate"
-  },
-  {
    "id": "ov-621e8112-0afa-4ffe-a4db-2be6e9c1589c",
    "name": "NAF Protestant Church",
    "aliases": [],
@@ -28938,6 +28971,29 @@
    ],
    "licenses": [],
    "notes": "Wikidata Q131359277; instance-of: school"
+  },
+  {
+   "id": "ng-benue-makurdi-naval-base-kanshio",
+   "name": "Naval Base Kanshio",
+   "aliases": [
+    "Naval Base Makurdi",
+    "Nigerian Navy Base Kanshio"
+   ],
+   "locality": "Makurdi",
+   "lga": "Makurdi",
+   "state": "Benue",
+   "category": "landmark",
+   "lat": 7.685,
+   "lng": 8.5361,
+   "precision": "approximate",
+   "verified": false,
+   "sources": [
+    "curated"
+   ],
+   "licenses": [
+    "project-owned"
+   ],
+   "notes": "Draft; district-level coords (Kanshio); exact base position needs verification"
   },
   {
    "id": "ov-9f4443d1-7b71-4d51-b751-39396aa6bc67",
@@ -30404,6 +30460,29 @@
     "project-owned"
    ],
    "notes": "Draft; coords approximate"
+  },
+  {
+   "id": "ng-benue-makurdi-old-otukpo-road",
+   "name": "Old Otukpo Road",
+   "aliases": [
+    "Old Otukpo Rd",
+    "Otukpo Old Road"
+   ],
+   "locality": "Makurdi",
+   "lga": "Makurdi",
+   "state": "Benue",
+   "category": "landmark",
+   "lat": 7.71,
+   "lng": 8.495,
+   "precision": "approximate",
+   "verified": false,
+   "sources": [
+    "curated"
+   ],
+   "licenses": [
+    "project-owned"
+   ],
+   "notes": "Draft; approximate point on the old Otukpo road south of town; needs verification"
   },
   {
    "id": "ov-b9d27205-5c0e-4e83-8274-ae6a34661bb1",
@@ -32730,24 +32809,29 @@
    "notes": "GeoNames feature P.PPL"
   },
   {
-   "id": "ov-783e9814-f829-4d86-923e-fbaeb86b1faf",
-   "name": "Road safety office",
-   "aliases": [],
+   "id": "ng-benue-makurdi-road-safety-junction",
+   "name": "Road Safety Junction",
+   "aliases": [
+    "FRSC Junction Makurdi",
+    "Road safety office"
+   ],
    "locality": "Makurdi",
    "lga": "Makurdi",
    "state": "Benue",
-   "category": "event-or-party-service",
+   "category": "junction",
    "lat": 7.69284,
-   "lng": 8.535886,
-   "precision": "exact",
+   "lng": 8.53589,
+   "precision": "approximate",
    "verified": false,
    "sources": [
+    "curated",
     "overture"
    ],
    "licenses": [
-    "CDLA-Permissive-2.0"
+    "CDLA-Permissive-2.0",
+    "project-owned"
    ],
-   "notes": "Overture 783e9814-f829-4d86-923e-fbaeb86b1faf; confidence 0.49267396330833435"
+   "notes": "Draft; coords taken from Overture Road safety office; junction assumed co-located; verify; Overture 783e9814-f829-4d86-923e-fbaeb86b1faf; confidence 0.49267396330833435"
   },
   {
    "id": "wd-Q136510531",
@@ -35621,6 +35705,28 @@
     "CDLA-Permissive-2.0"
    ],
    "notes": "Overture 1294bc3b-fb3a-48ef-b090-ee193bcc2791; confidence 0.6109607815742493"
+  },
+  {
+   "id": "ng-benue-makurdi-terwase-agbadu-street",
+   "name": "Terwase Agbadu Street",
+   "aliases": [
+    "Terwase Agbadu St"
+   ],
+   "locality": "Makurdi",
+   "lga": "Makurdi",
+   "state": "Benue",
+   "category": "road",
+   "lat": 7.713603,
+   "lng": 8.583866,
+   "precision": "approximate",
+   "verified": false,
+   "sources": [
+    "curated"
+   ],
+   "licenses": [
+    "project-owned"
+   ],
+   "notes": "Draft; street in the Hange area of Makurdi; coords from user-provided map pin"
   },
   {
    "id": "ov-db98a8e1-c49c-4c16-9c27-157de25de863",

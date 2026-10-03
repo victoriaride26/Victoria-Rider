@@ -60,3 +60,5 @@ api-manifest-todo.md
 # Gazetteer build caches (downloaded source dumps, regenerable via build.py)
 tool/gazetteer/.cache/
 __pycache__/
+tool/gazetteer/out/gazetteer_map.html
+tool/gazetteer/out/gazetteer_list.html

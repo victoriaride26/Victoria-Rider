@@ -1,7 +1,7 @@
 # Benue gazetteer - sources, licensing and provenance
 
-Generated: 2026-10-03T07:36:13+00:00  |  Schema version: 1
-Entries: 2020  |  Towns: Makurdi, Gboko, Otukpo, Katsina-Ala, Vandeikya
+Generated: 2026-10-03T10:36:18+00:00  |  Schema version: 1
+Entries: 2024  |  Towns: Makurdi, Gboko, Otukpo, Katsina-Ala, Vandeikya
 
 ## Sources
 

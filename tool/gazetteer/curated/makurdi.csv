@@ -22,10 +22,16 @@ ng-benue-makurdi-state-secretariat,Benue State Secretariat,State Secretariat|Mak
 ng-benue-makurdi-federal-secretariat,Federal Secretariat Makurdi,Federal Secretariat,Makurdi,Makurdi,Benue,government,7.7400,8.5220,approximate,false,Draft; coords approximate
 ng-benue-makurdi-cbn,Central Bank of Nigeria Makurdi,CBN Makurdi|CBN Makurdi Branch,Makurdi,Makurdi,Benue,bank,7.7360,8.5240,approximate,false,Draft; coords approximate
 ng-benue-makurdi-benue-hotels,Benue Hotels Makurdi,Benue Hotel|Benue Hotels,Makurdi,Makurdi,Benue,hotel,7.7330,8.5230,approximate,false,Draft; coords approximate
-ng-benue-makurdi-naf-base,NAF Base Makurdi,Nigeria Air Force Base Makurdi|NAF Makurdi,Makurdi,Makurdi,Benue,landmark,7.7050,8.5950,approximate,false,Draft; coords approximate
+ng-benue-makurdi-naf-base,Airforce Base Makurdi,NAF Base Makurdi|Tactical Air Command Makurdi|Airport Makurdi|Nigeria Air Force Base Makurdi|NAF Makurdi,Makurdi,Makurdi,Benue,landmark,7.7050,8.5950,approximate,false,Draft; coords approximate; same airfield complex as Makurdi Airport (about 0.5 km)
 ng-benue-makurdi-airport,Makurdi Airport,Makurdi Airstrip|Benue Airport,Makurdi,Makurdi,Benue,airport,7.7056,8.5994,approximate,false,Draft; coords approximate - verify
 ng-benue-makurdi-railway-station,Makurdi Railway Station,Makurdi Train Station|Railway Station Makurdi,Makurdi,Makurdi,Benue,transport,7.7280,8.5400,approximate,false,Draft; coords approximate - verify
 ng-benue-makurdi-tarka-foundation,Tarka Foundation,Tarka Foundation Road,Makurdi,Makurdi,Benue,landmark,7.7411,8.5166,approximate,false,Landmark coords already used by the app
 ng-benue-makurdi-gboko-road,Makurdi-Gboko Road,Gboko Road|A3 Makurdi,Makurdi,Makurdi,Benue,road,7.7300,8.5500,approximate,false,East-bound road exit point; coords approximate
 ng-benue-makurdi-lafia-road,Makurdi-Lafia Road,Lafia Road,Makurdi,Makurdi,Benue,road,7.7150,8.5250,approximate,false,South-bound road exit point; coords approximate
 ng-benue-makurdi-naka-road,Makurdi-Naka Road,Naka Road,Makurdi,Makurdi,Benue,road,7.7400,8.5050,approximate,false,West-bound road exit point; coords approximate
+ng-benue-makurdi-fmwh-quarters,FMW&H Quarters,Welfare Quarters|FMW and H Quarters,Makurdi,Makurdi,Benue,district,7.672965,8.538979,approximate,true,User-confirmed 2026-10-02: FMW&H Quarters == Welfare Quarters; coords copied from Wikidata record
+ng-benue-makurdi-road-safety-junction,Road Safety Junction,Road safety office|FRSC Junction Makurdi,Makurdi,Makurdi,Benue,junction,7.69284,8.53589,approximate,false,Draft; coords taken from Overture Road safety office; junction assumed co-located; verify
+ng-benue-makurdi-naval-base-kanshio,Naval Base Kanshio,Naval Base Makurdi|Nigerian Navy Base Kanshio,Makurdi,Makurdi,Benue,landmark,7.6850,8.5361,approximate,false,Draft; district-level coords (Kanshio); exact base position needs verification
+ng-benue-makurdi-old-otukpo-road,Old Otukpo Road,Old Otukpo Rd|Otukpo Old Road,Makurdi,Makurdi,Benue,landmark,7.7100,8.4950,approximate,false,Draft; approximate point on the old Otukpo road south of town; needs verification
+ng-benue-makurdi-terwase-agbadu-street,Terwase Agbadu Street,Terwase Agbadu St,Makurdi,Makurdi,Benue,road,7.713603,8.583866,approximate,false,Draft; street in the Hange area of Makurdi; coords from user-provided map pin
+ng-benue-makurdi-hange,Hange,Hange District,Makurdi,Makurdi,Benue,district,7.7136,8.5839,approximate,false,Draft; district in NE Makurdi on the Gboko Rd corridor; coords approximate; verify
