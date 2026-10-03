@@ -121,9 +121,15 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
               _etaMinutes = update.etaMinutes!;
             } else {
               // Recalculate approximate ETA based on distance
-              final distanceMeters = const Distance()
-                  .as(LengthUnit.Meter, _driverPoint!, _pickupPoint);
-              _etaMinutes = ((distanceMeters / 1000) / 30 * 60).ceil().clamp(1, 45);
+              final distanceMeters = const Distance().as(
+                LengthUnit.Meter,
+                _driverPoint!,
+                _pickupPoint,
+              );
+              _etaMinutes = ((distanceMeters / 1000) / 30 * 60).ceil().clamp(
+                1,
+                45,
+              );
             }
           });
         }
@@ -133,8 +139,9 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
       _statusSub = _socket.onRideStatusUpdated.listen((data) {
         final incomingId = (data['rideId'] ?? data['id'])?.toString();
         if (incomingId == null || incomingId == widget.rideId) {
-          final status =
-              (data['status'] ?? data['state'])?.toString().toUpperCase();
+          final status = (data['status'] ?? data['state'])
+              ?.toString()
+              .toUpperCase();
           _handleStatus(status);
         }
       });
@@ -149,16 +156,18 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
   Future<void> _checkStatus() async {
     if (_navigated || widget.rideId == null) return;
     try {
-      final response = await ApiClient.instance
-          .get(ApiConfig.rideStatus(widget.rideId!));
+      final response = await ApiClient.instance.get(
+        ApiConfig.rideStatus(widget.rideId!),
+      );
       final decoded = response as Map<String, dynamic>?;
       final data = decoded?['data'] as Map<String, dynamic>? ?? decoded;
       final backendFare = FareParser.estimatedFareNgn(response);
       if (backendFare != null && mounted && backendFare != _backendFareNgn) {
         setState(() => _backendFareNgn = backendFare);
       }
-      final status =
-          (data?['status'] ?? data?['state'])?.toString().toUpperCase();
+      final status = (data?['status'] ?? data?['state'])
+          ?.toString()
+          .toUpperCase();
       _handleStatus(status);
     } catch (_) {}
   }
@@ -171,7 +180,9 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
         setState(() => _driverArrived = true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('🚗 Your Victoria driver has arrived at the pickup point!'),
+            content: Text(
+              '🚗 Your Victoria driver has arrived at the pickup point!',
+            ),
             backgroundColor: AppColors.primary,
             behavior: SnackBarBehavior.floating,
             duration: Duration(seconds: 4),
@@ -290,7 +301,9 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Cancel Ride?'),
-        content: const Text('Are you sure you want to cancel your ride? The driver is already on the way.'),
+        content: const Text(
+          'Are you sure you want to cancel your ride? The driver is already on the way.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -303,7 +316,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
         ],
       ),
     );
-    
+
     if (cancel == true && mounted) {
       if (widget.rideId != null) {
         try {
@@ -312,9 +325,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
       }
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute<void>(
-            builder: (_) => const RiderHomeShell(),
-          ),
+          MaterialPageRoute<void>(builder: (_) => const RiderHomeShell()),
           (r) => false,
         );
       }
@@ -344,11 +355,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
             shape: BoxShape.circle,
           ),
           child: const Center(
-            child: Icon(
-              Icons.location_on,
-              color: AppColors.primary,
-              size: 38,
-            ),
+            child: Icon(Icons.location_on, color: AppColors.primary, size: 38),
           ),
         ),
       ),
@@ -411,7 +418,9 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
       child: Scaffold(
         appBar: AppBar(
           leading: AppBackButton(onPressed: _handleBack),
-          title: Text(_driverArrived ? 'Driver has arrived' : 'Driver en route'),
+          title: Text(
+            _driverArrived ? 'Driver has arrived' : 'Driver en route',
+          ),
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh),
@@ -424,275 +433,360 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
             ),
           ],
         ),
-      body: Column(
-        children: [
-          // ── Active Map with Live Moving Driver Marker ──
-          Expanded(
-            flex: 4,
-            child: Stack(
-              children: [
-                MapboxMapView(
-                  mapController: _mapController,
-                  center: mapCenter,
-                  zoom: 14.5,
-                  showUserLocation: true,
-                  markers: markers,
-                  polylines: polylines,
-                ),
-                // Floating status pill over the map
-                Positioned(
-                  top: 16,
-                  left: 16,
-                  right: 16,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: _driverArrived
-                          ? AppColors.primary
-                          : Colors.black.withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.2),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _driverArrived
-                              ? Icons.check_circle
-                              : Icons.navigation_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _driverArrived
-                                ? 'Driver waiting at pickup point'
-                                : 'Driver is on the way • arriving in $_etaMinutes mins',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+        body: Stack(
+          children: [
+            // ── Active Map with Live Moving Driver Marker ──
+            Positioned.fill(
+              child: Stack(
+                children: [
+                  MapboxMapView(
+                    mapController: _mapController,
+                    center: mapCenter,
+                    zoom: 14.5,
+                    showUserLocation: true,
+                    markers: markers,
+                    polylines: polylines,
                   ),
-                ),
-              ],
-            ),
-          ),
-
-          // ── Driver Info & Action Controls Sheet ──
-          Expanded(
-            flex: 5,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Pickup address confirmation
-                    Row(
-                      children: [
-                        const Icon(Icons.my_location,
-                            color: AppColors.primary, size: 20),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            widget.pickupLabel ?? 'Pickup location confirmed',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 20),
-
-                    // Driver Profile Details
-                    Row(
-                      children: [
-                        DriverAvatar(
-                          imageUrl: widget.driverProfileImage,
-                          driverName: name,
-                          radius: 26,
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(name,
-                                      style: theme.textTheme.titleMedium
-                                          ?.copyWith(fontWeight: FontWeight.bold)),
-                                  const SizedBox(width: 6),
-                                  const Icon(Icons.verified,
-                                      color: AppColors.primary, size: 18),
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              Text('$rating  •  Verified Victoria Driver',
-                                  style: const TextStyle(
-                                      color: AppColors.onSurfaceVariant,
-                                      fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
+                  // Floating status pill over the map
+                  Positioned(
+                    top: 16,
+                    left: 16,
+                    right: 16,
+                    child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
-                        color: AppColors.surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(8),
+                        color: _driverArrived
+                            ? AppColors.primary
+                            : Colors.black.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(plate,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: 1)),
-                              Text(vehicle,
-                                  style: const TextStyle(
-                                      color: AppColors.onSurfaceVariant,
-                                      fontSize: 12)),
-                            ],
+                          Icon(
+                            _driverArrived
+                                ? Icons.check_circle
+                                : Icons.navigation_rounded,
+                            color: Colors.white,
+                            size: 20,
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryContainer,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
+                          const SizedBox(width: 10),
+                          Expanded(
                             child: Text(
-                              '$_etaMinutes MINS',
+                              _driverArrived
+                                  ? 'Driver waiting at pickup point'
+                                  : 'Driver is on the way • arriving in $_etaMinutes mins',
                               style: const TextStyle(
-                                color: AppColors.onPrimaryContainer,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const Spacer(),
+                  ),
+                ],
+              ),
+            ),
 
-                    // Action buttons: Call Driver & Message Driver
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _callDriver,
-                            icon: const Icon(Icons.call),
-                            label: const Text('Call Driver'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ListenableBuilder(
-                            listenable: RiderChatService.instance,
-                            builder: (context, _) {
-                              final unread =
-                                  RiderChatService.instance.unreadFor(widget.rideId);
-                              return OutlinedButton.icon(
-                                onPressed: () {
-                                  InRideChatSheet.show(
-                                    context,
-                                    rideId: widget.rideId ?? 'active_ride',
-                                    driverName: name,
-                                  );
-                                },
-                                icon: Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    const Icon(Icons.chat_bubble_outline),
-                                    if (unread > 0)
-                                      Positioned(
-                                        right: -4,
-                                        top: -4,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                                          child: Text(
-                                            '$unread',
-                                            style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                label: const Text('Message'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    AppPrimaryButton(
-                      label: 'Full Trip Tracking',
-                      onPressed: () {
-                        // Same rules as the automatic transition: trip screen
-                        // becomes the top route, this screen stops polling.
-                        _navigated = true;
-                        _pollTimer?.cancel();
-                        _statusSub?.cancel();
-                        _locationSub?.cancel();
-                        Navigator.of(context).pushAndRemoveUntil(
-                          MaterialPageRoute<void>(
-                            builder: (_) => RideInProgressScreen(
-                              rideId: widget.rideId,
-                              driverName: name,
-                              driverPhone: widget.driverPhone,
-                              vehicleModel: vehicle,
-                              plateNumber: plate,
-                              driverProfileImage: widget.driverProfileImage,
-                              pickupLatLng: _pickupPoint,
-                              destinationLatLng: widget.destinationLatLng,
-                              destinationLabel: widget.destinationLabel,
-                              fareNgn: _fareNgn,
-                              paymentMethod: widget.paymentMethod,
-                              pickupAddress: widget.pickupLabel,
-                              dropoffAddress: widget.destinationLabel,
-                            ),
-                          ),
-                          (route) => route.isFirst,
-                        );
-                      },
+            // ── Driver Info & Action Controls ── bottom sheet, 40% of screen height
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: MediaQuery.sizeOf(context).height * 0.4,
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 10,
+                      spreadRadius: 2,
                     ),
                   ],
                 ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 12),
+                      // Drag-handle style grip, consistent with the ride sheets
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.outlineVariant,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Pickup address confirmation
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.my_location,
+                                    color: AppColors.primary,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      widget.pickupLabel ??
+                                          'Pickup location confirmed',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(height: 20),
+
+                              // Driver Profile Details
+                              Row(
+                                children: [
+                                  DriverAvatar(
+                                    imageUrl: widget.driverProfileImage,
+                                    driverName: name,
+                                    radius: 26,
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              name,
+                                              style: theme.textTheme.titleMedium
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            const Icon(
+                                              Icons.verified,
+                                              color: AppColors.primary,
+                                              size: 18,
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '$rating  •  Verified Victoria Driver',
+                                          style: const TextStyle(
+                                            color: AppColors.onSurfaceVariant,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceContainerLow,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          plate,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 1,
+                                          ),
+                                        ),
+                                        Text(
+                                          vehicle,
+                                          style: const TextStyle(
+                                            color: AppColors.onSurfaceVariant,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primaryContainer,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '$_etaMinutes MINS',
+                                        style: const TextStyle(
+                                          color: AppColors.onPrimaryContainer,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+
+                              // Action buttons: Call Driver & Message Driver
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: _callDriver,
+                                      icon: const Icon(Icons.call),
+                                      label: const Text('Call Driver'),
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: ListenableBuilder(
+                                      listenable: RiderChatService.instance,
+                                      builder: (context, _) {
+                                        final unread = RiderChatService.instance
+                                            .unreadFor(widget.rideId);
+                                        return OutlinedButton.icon(
+                                          onPressed: () {
+                                            InRideChatSheet.show(
+                                              context,
+                                              rideId:
+                                                  widget.rideId ??
+                                                  'active_ride',
+                                              driverName: name,
+                                            );
+                                          },
+                                          icon: Stack(
+                                            clipBehavior: Clip.none,
+                                            children: [
+                                              const Icon(
+                                                Icons.chat_bubble_outline,
+                                              ),
+                                              if (unread > 0)
+                                                Positioned(
+                                                  right: -4,
+                                                  top: -4,
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.all(4),
+                                                    decoration:
+                                                        const BoxDecoration(
+                                                          color: Colors.red,
+                                                          shape:
+                                                              BoxShape.circle,
+                                                        ),
+                                                    child: Text(
+                                                      '$unread',
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 8,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                          label: const Text('Message'),
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 12,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              AppPrimaryButton(
+                                label: 'Full Trip Tracking',
+                                onPressed: () {
+                                  // Same rules as the automatic transition: trip screen
+                                  // becomes the top route, this screen stops polling.
+                                  _navigated = true;
+                                  _pollTimer?.cancel();
+                                  _statusSub?.cancel();
+                                  _locationSub?.cancel();
+                                  Navigator.of(context).pushAndRemoveUntil(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => RideInProgressScreen(
+                                        rideId: widget.rideId,
+                                        driverName: name,
+                                        driverPhone: widget.driverPhone,
+                                        vehicleModel: vehicle,
+                                        plateNumber: plate,
+                                        driverProfileImage:
+                                            widget.driverProfileImage,
+                                        pickupLatLng: _pickupPoint,
+                                        destinationLatLng:
+                                            widget.destinationLatLng,
+                                        destinationLabel:
+                                            widget.destinationLabel,
+                                        fareNgn: _fareNgn,
+                                        paymentMethod: widget.paymentMethod,
+                                        pickupAddress: widget.pickupLabel,
+                                        dropoffAddress: widget.destinationLabel,
+                                      ),
+                                    ),
+                                    (route) => route.isFirst,
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ));
+    );
   }
 }
