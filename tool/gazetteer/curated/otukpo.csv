@@ -1,0 +1,6 @@
+id,name,aliases,locality,lga,state,category,lat,lng,precision,verified,notes
+ng-benue-otukpo-town-centre,Otukpo Town Centre,Otukpo town|Otukpo centre,Otukpo,Otukpo,Benue,district,6.8667,8.1833,approximate,false,Draft; town centre coords - verify
+ng-benue-otukpo-main-market,Otukpo Main Market,Otukpo Market|Otukpo Central Market,Otukpo,Otukpo,Benue,market,6.8670,8.1840,approximate,false,Draft; coords approximate - verify
+ng-benue-otukpo-lga-secretariat,Otukpo LGA Secretariat,Otukpo LGA Headquarters|Otukpo Council Secretariat,Otukpo,Otukpo,Benue,government,6.8660,8.1820,approximate,false,Draft; coords approximate - verify
+ng-benue-otukpo-fgc,Federal Government College Otukpo,FGC Otukpo|Federal Government College Otukpo,Otukpo,Otukpo,Benue,school,6.8700,8.1800,approximate,false,Draft; existence likely - coords approximate - verify
+ng-benue-otukpo-roundabout,Otukpo Roundabout,Otukpo Junction,Otukpo,Otukpo,Benue,landmark,6.8680,8.1830,approximate,false,Draft - name/placement unconfirmed; verify before shipping

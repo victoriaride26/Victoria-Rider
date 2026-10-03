@@ -8,7 +8,15 @@ class MapboxConfig {
   /// Public (publishable) Mapbox access token, loaded from the gitignored
   /// `.env` file (`MAPBOX_TOKEN`). Falls back to an empty string so the
   /// map gracefully degrades to OpenStreetMap tiles when unset.
-  static String get accessToken => dotenv.env['MAPBOX_TOKEN'] ?? '';
+  static String get accessToken {
+    try {
+      return dotenv.env['MAPBOX_TOKEN'] ?? '';
+    } catch (_) {
+      // `.env` not loaded (missing asset, or a unit test run): dotenv.env
+      // throws NotInitializedError in that state - degrade to ''.
+      return '';
+    }
+  }
 
   /// Mapbox style used for the rider experience.
   static const String styleId = 'navigation-preview-day-v4';

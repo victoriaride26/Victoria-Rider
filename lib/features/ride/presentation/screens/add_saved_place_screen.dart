@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/models/geocoding_result.dart';
 import '../../../../core/models/saved_place.dart';
-import '../../../../core/services/geoapify_geocoding_service.dart';
+import '../../../../core/services/place_search_service.dart';
 import '../../../../core/services/places_storage_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
@@ -16,7 +16,7 @@ class AddSavedPlaceScreen extends StatefulWidget {
 }
 
 class _AddSavedPlaceScreenState extends State<AddSavedPlaceScreen> {
-  final _geoapifyGeocoding = GeoapifyGeocodingService();
+  final _placeSearch = PlaceSearchService();
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
 
@@ -40,7 +40,7 @@ class _AddSavedPlaceScreenState extends State<AddSavedPlaceScreen> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _focusNode.dispose();
-    _geoapifyGeocoding.dispose();
+    _placeSearch.dispose();
     super.dispose();
   }
 
@@ -60,7 +60,7 @@ class _AddSavedPlaceScreenState extends State<AddSavedPlaceScreen> {
     setState(() => _isSearching = true);
 
     _debounce = Timer(const Duration(milliseconds: 380), () async {
-      final results = await _geoapifyGeocoding.search(query);
+      final results = await _placeSearch.search(query, primaryIsMapbox: false);
       if (mounted) {
         setState(() {
           _searchResults = results;

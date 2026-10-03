@@ -56,3 +56,7 @@ android/.kotlin/
 # Widget Preview related
 .widget_preview/
 api-manifest-todo.md
+
+# Gazetteer build caches (downloaded source dumps, regenerable via build.py)
+tool/gazetteer/.cache/
+__pycache__/

@@ -7,7 +7,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/models/geocoding_result.dart';
-import '../../../../core/services/mapbox_geocoding_service.dart';
+import '../../../../core/services/place_search_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../payments/data/rider_wallet_repository.dart';
 import '../../../payments/presentation/widgets/fund_wallet_sheet.dart';
@@ -223,11 +223,13 @@ class _RideRequestSheetState extends State<RideRequestSheet>
         }
       }
     } on ApiException catch (e) {
-      if (mounted) setState(() {
-        _error = e.message;
-        _estimate = null;
-        _vehicleEstimates.clear();
-      });
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _estimate = null;
+          _vehicleEstimates.clear();
+        });
+      }
     } catch (e) {
       if (mounted) {
         final rawMsg = e.toString().replaceFirst('Exception: ', '');
@@ -1704,7 +1706,7 @@ class _StopPickerSheet extends StatefulWidget {
 
 class _StopPickerSheetState extends State<_StopPickerSheet> {
   final _controller = TextEditingController();
-  final _geocoding = MapboxGeocodingService();
+  final _placeSearch = PlaceSearchService.instance;
   Timer? _debounce;
 
   List<GeocodingResult> _suggestions = [];
@@ -1720,14 +1722,18 @@ class _StopPickerSheetState extends State<_StopPickerSheet> {
   void _onQueryChanged(String query) {
     _debounce?.cancel();
     if (query.trim().length < 3) {
-      setState(() => _suggestions = []);
+      setState(() {
+        _suggestions = [];
+        _searching = false;
+      });
       return;
     }
+    setState(() => _searching = true);
     _debounce = Timer(const Duration(milliseconds: 400), () async {
       if (!mounted) return;
       setState(() => _searching = true);
       try {
-        final results = await _geocoding.search(query);
+        final results = await _placeSearch.search(query);
         if (mounted) setState(() => _suggestions = results);
       } catch (_) {
       } finally {
@@ -1823,6 +1829,15 @@ class _StopPickerSheetState extends State<_StopPickerSheet> {
                     onTap: () => Navigator.of(context).pop(place),
                   );
                 },
+              ),
+            ),
+          ] else if (!_searching && _controller.text.trim().length >= 3) ...[
+            const SizedBox(height: 12),
+            Text(
+              'No places found. Try a different search term.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: AppColors.onSurfaceVariant,
               ),
             ),
           ],

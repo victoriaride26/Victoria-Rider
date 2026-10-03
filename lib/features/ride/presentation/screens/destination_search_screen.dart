@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/services/location_service.dart';
 import '../../../../core/models/geocoding_result.dart';
-import '../../../../core/services/geoapify_geocoding_service.dart';
-import '../../../../core/services/mapbox_geocoding_service.dart';
+import '../../../../core/services/place_search_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/models/saved_place.dart';
@@ -44,8 +43,7 @@ class DestinationSearchScreen extends StatefulWidget {
 }
 
 class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
-  final _geoapifyGeocoding = GeoapifyGeocodingService();
-  final _mapboxGeocoding = MapboxGeocodingService();
+  final _placeSearch = PlaceSearchService();
   final _locationService = LocationService();
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
@@ -91,8 +89,7 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _focusNode.dispose();
-    _geoapifyGeocoding.dispose();
-    _mapboxGeocoding.dispose();
+    _placeSearch.dispose();
     _locationService.dispose();
     super.dispose();
   }
@@ -113,18 +110,11 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
     setState(() => _isSearching = true);
 
     _debounce = Timer(const Duration(milliseconds: 380), () async {
-      List<GeocodingResult> results;
-      if (_activeTarget == SearchTarget.pickup) {
-        results = await _mapboxGeocoding.search(
-          query,
-          proximity: _currentPickup?.position ?? widget.currentLocation?.position,
-        );
-      } else {
-        results = await _geoapifyGeocoding.search(
-          query,
-          proximity: _currentPickup?.position ?? widget.currentLocation?.position,
-        );
-      }
+      final results = await _placeSearch.search(
+        query,
+        proximity: _currentPickup?.position ?? widget.currentLocation?.position,
+        primaryIsMapbox: _activeTarget == SearchTarget.pickup,
+      );
       if (mounted) {
         setState(() {
           _searchResults = results;

@@ -1,0 +1,6 @@
+id,name,aliases,locality,lga,state,category,lat,lng,precision,verified,notes
+ng-benue-gboko-town-centre,Gboko Town Centre,Gboko town|Gboko centre,Gboko,Gboko,Benue,district,6.9081,8.9964,approximate,false,Draft; town centre coords - verify
+ng-benue-gboko-tor-tiv-palace,Tor Tiv's Palace,Tor Tiv Palace|Gboko Tor Tiv Palace,Gboko,Gboko,Benue,landmark,6.9100,9.0000,approximate,false,Draft; coords approximate - verify placement
+ng-benue-gboko-main-market,Gboko Main Market,Gboko Market|Gboko Central Market,Gboko,Gboko,Benue,market,6.9070,8.9950,approximate,false,Draft; coords approximate - verify
+ng-benue-gboko-lga-secretariat,Gboko LGA Secretariat,Gboko LGA Headquarters|Gboko Council Secretariat,Gboko,Gboko,Benue,government,6.9090,8.9970,approximate,false,Draft; coords approximate - verify
+ng-benue-gboko-general-hospital,Gboko General Hospital,Gboko Hospital,Gboko,Gboko,Benue,hospital,6.9060,8.9980,approximate,false,Draft - existence/placement unconfirmed; verify before shipping

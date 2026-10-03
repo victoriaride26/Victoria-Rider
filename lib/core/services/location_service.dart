@@ -1,6 +1,7 @@
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'geoapify_geocoding_service.dart';
 import 'mapbox_geocoding_service.dart';
 
 /// Holds the rider's current position and its human-readable label.
@@ -41,12 +42,17 @@ enum LocationPermissionStatus {
 /// Handles all permission negotiation internally so callers don't need to
 /// deal with [LocationPermission] states themselves.
 class LocationService {
-  LocationService({MapboxGeocodingService? geocoding})
-      : _geocoding = geocoding ?? MapboxGeocodingService();
+  LocationService({MapboxGeocodingService? geocoding, GeoapifyGeocodingService? geoapify})
+      : _geocoding = geocoding ?? MapboxGeocodingService(),
+        _geoapify = geoapify ?? GeoapifyGeocodingService();
 
   final MapboxGeocodingService _geocoding;
+  final GeoapifyGeocodingService _geoapify;
 
-  void dispose() => _geocoding.dispose();
+  void dispose() {
+    _geocoding.dispose();
+    _geoapify.dispose();
+  }
 
   Future<LocationPermissionStatus> checkPermissionStatus() async {
     try {
@@ -94,8 +100,10 @@ class LocationService {
 
       final latLng = LatLng(position.latitude, position.longitude);
 
-      // 4. Reverse-geocode to a human-readable address.
-      final result = await _geocoding.reverseGeocode(latLng);
+      // 4. Reverse-geocode to a human-readable address: Mapbox first, then
+      // Geoapify, so a Mapbox miss (thin coverage in Benue) still resolves.
+      var result = await _geocoding.reverseGeocode(latLng);
+      result ??= await _geoapify.reverseGeocode(latLng);
 
       if (result != null) {
         return CurrentLocation(

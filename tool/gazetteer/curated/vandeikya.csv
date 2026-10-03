@@ -1,0 +1,5 @@
+id,name,aliases,locality,lga,state,category,lat,lng,precision,verified,notes
+ng-benue-vandeikya-town-centre,Vandeikya Town Centre,Vandeikya town|Vandeikya centre,Vandeikya,Vandeikya,Benue,district,6.7848,9.0680,approximate,false,Town coords from GeoNames PPLA2 record - verify
+ng-benue-vandeikya-lga-secretariat,Vandeikya LGA Secretariat,Vandeikya LGA Headquarters,Vandeikya,Vandeikya,Benue,government,6.7850,9.0685,approximate,false,Draft; coords approximate - verify
+ng-benue-vandeikya-main-market,Vandeikya Main Market,Vandeikya Market,Vandeikya,Vandeikya,Benue,market,6.7840,9.0670,approximate,false,Draft; coords approximate - verify
+ng-benue-vandeikya-rock,Vandeikya Rock,,Vandeikya,Vandeikya,Benue,landmark,6.7900,9.0700,approximate,false,Draft; also on Wikidata (Q113997776) - coords to be merged from source pull

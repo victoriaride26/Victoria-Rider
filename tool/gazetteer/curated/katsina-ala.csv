@@ -1,0 +1,4 @@
+id,name,aliases,locality,lga,state,category,lat,lng,precision,verified,notes
+ng-benue-katsina-ala-town-centre,Katsina-Ala Town Centre,Katsina Ala town|Katsina-Ala centre,Katsina-Ala,Katsina-Ala,Benue,district,7.1694,9.2847,approximate,false,Town coords from GeoNames PPLA2 record - verify
+ng-benue-katsina-ala-lga-secretariat,Katsina-Ala LGA Secretariat,Katsina-Ala LGA Headquarters,Katsina-Ala,Katsina-Ala,Benue,government,7.1700,9.2850,approximate,false,Draft; coords approximate - verify
+ng-benue-katsina-ala-main-market,Katsina-Ala Main Market,Katsina-Ala Market,Katsina-Ala,Katsina-Ala,Benue,market,7.1690,9.2840,approximate,false,Draft; coords approximate - verify

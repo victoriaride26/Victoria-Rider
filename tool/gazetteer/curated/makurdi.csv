@@ -1,0 +1,31 @@
+id,name,aliases,locality,lga,state,category,lat,lng,precision,verified,notes
+ng-benue-makurdi-high-level,High Level,Highlevel|High Level Makurdi,Makurdi,Makurdi,Benue,district,7.7400,8.5170,approximate,false,Draft. Area NW of town centre; coords approximate
+ng-benue-makurdi-north-bank,North Bank,Northbank|North Bank Makurdi,Makurdi,Makurdi,Benue,district,7.7700,8.5200,approximate,false,Draft. North of the Benue river; coords approximate
+ng-benue-makurdi-wurukum,Wurukum (Low Level),Wurukum|Low Level|Wurukum Roundabout,Makurdi,Makurdi,Benue,district,7.7322,8.5245,approximate,false,Coords from Wurukum Market landmark in app
+ng-benue-makurdi-old-gra,Old GRA,,Makurdi,Makurdi,Benue,district,7.7360,8.5300,approximate,false,Draft; coords approximate
+ng-benue-makurdi-new-gra,New GRA,,Makurdi,Makurdi,Benue,district,7.7300,8.5350,approximate,false,Draft; coords approximate
+ng-benue-makurdi-wadata,Wadata,,Makurdi,Makurdi,Benue,district,7.7250,8.5300,approximate,false,Draft; coords approximate
+ng-benue-makurdi-ankpa,Ankpa Ward,Ankpa,Makurdi,Makurdi,Benue,district,7.7300,8.5200,approximate,false,Draft; coords approximate
+ng-benue-makurdi-nyiman,Nyiman Layout,Nyiman,Makurdi,Makurdi,Benue,district,7.7450,8.5300,approximate,false,Draft; coords approximate
+ng-benue-makurdi-achusa,Achusa,,Makurdi,Makurdi,Benue,district,7.7050,8.5150,approximate,false,Draft; coords approximate
+ng-benue-makurdi-judges-quarters,Judges Quarters,Judge's Quarters|Judges Crescent|Judge Crescent|Judges Quarters Gboko Rd,Makurdi,Makurdi,Benue,district,7.7237,8.5601,approximate,false,APPROVED ENTRY. Km 4 Makurdi-Gboko Rd near Hange; coords from property listing; provider data does not cover it
+ng-benue-makurdi-adeke,Adeke,,Makurdi,Makurdi,Benue,district,7.7100,8.5350,approximate,false,Draft; coords approximate
+ng-benue-makurdi-fiidi,Fiidi,,Makurdi,Makurdi,Benue,district,7.7500,8.5500,approximate,false,Draft; coords approximate
+ng-benue-makurdi-wurukum-market,Wurukum Market,Wurukum Roundabout Market|Makurdi Wurukum Market,Makurdi,Makurdi,Benue,market,7.7322,8.5245,approximate,false,Landmark coords already used by the app
+ng-benue-makurdi-modern-market,Modern Market,Makurdi Modern Market|Modern Market Makurdi,Makurdi,Makurdi,Benue,market,7.7261,8.5180,approximate,false,Landmark coords already used by the app
+ng-benue-makurdi-bsu,Benue State University,BSU|Benue State University Makurdi,Makurdi,Makurdi,Benue,university,7.7450,8.5300,approximate,false,Draft; coords approximate - verify placement
+ng-benue-makurdi-bsuth,Benue State University Teaching Hospital,BSUTH|BSU Teaching Hospital,Makurdi,Makurdi,Benue,hospital,7.7400,8.5350,approximate,false,Draft; coords approximate - verify placement
+ng-benue-makurdi-fmc,Federal Medical Centre Makurdi,FMC Makurdi|Federal Medical Centre,Makurdi,Makurdi,Benue,hospital,7.7390,8.5320,approximate,false,Draft; coords approximate - verify placement
+ng-benue-makurdi-aper-aku-stadium,Aper Aku Stadium,Benue Stadium|Aper Aku Stadium Makurdi,Makurdi,Makurdi,Benue,landmark,7.7400,8.5250,approximate,false,Draft; coords approximate
+ng-benue-makurdi-government-house,Government House Makurdi,Government House|Benue Government House,Makurdi,Makurdi,Benue,government,7.7350,8.5280,approximate,false,Draft; coords approximate
+ng-benue-makurdi-state-secretariat,Benue State Secretariat,State Secretariat|Makurdi Secretariat,Makurdi,Makurdi,Benue,government,7.7370,8.5250,approximate,false,Draft; coords approximate
+ng-benue-makurdi-federal-secretariat,Federal Secretariat Makurdi,Federal Secretariat,Makurdi,Makurdi,Benue,government,7.7400,8.5220,approximate,false,Draft; coords approximate
+ng-benue-makurdi-cbn,Central Bank of Nigeria Makurdi,CBN Makurdi|CBN Makurdi Branch,Makurdi,Makurdi,Benue,bank,7.7360,8.5240,approximate,false,Draft; coords approximate
+ng-benue-makurdi-benue-hotels,Benue Hotels Makurdi,Benue Hotel|Benue Hotels,Makurdi,Makurdi,Benue,hotel,7.7330,8.5230,approximate,false,Draft; coords approximate
+ng-benue-makurdi-naf-base,NAF Base Makurdi,Nigeria Air Force Base Makurdi|NAF Makurdi,Makurdi,Makurdi,Benue,landmark,7.7050,8.5950,approximate,false,Draft; coords approximate
+ng-benue-makurdi-airport,Makurdi Airport,Makurdi Airstrip|Benue Airport,Makurdi,Makurdi,Benue,airport,7.7056,8.5994,approximate,false,Draft; coords approximate - verify
+ng-benue-makurdi-railway-station,Makurdi Railway Station,Makurdi Train Station|Railway Station Makurdi,Makurdi,Makurdi,Benue,transport,7.7280,8.5400,approximate,false,Draft; coords approximate - verify
+ng-benue-makurdi-tarka-foundation,Tarka Foundation,Tarka Foundation Road,Makurdi,Makurdi,Benue,landmark,7.7411,8.5166,approximate,false,Landmark coords already used by the app
+ng-benue-makurdi-gboko-road,Makurdi-Gboko Road,Gboko Road|A3 Makurdi,Makurdi,Makurdi,Benue,road,7.7300,8.5500,approximate,false,East-bound road exit point; coords approximate
+ng-benue-makurdi-lafia-road,Makurdi-Lafia Road,Lafia Road,Makurdi,Makurdi,Benue,road,7.7150,8.5250,approximate,false,South-bound road exit point; coords approximate
+ng-benue-makurdi-naka-road,Makurdi-Naka Road,Naka Road,Makurdi,Makurdi,Benue,road,7.7400,8.5050,approximate,false,West-bound road exit point; coords approximate
