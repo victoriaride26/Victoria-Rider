@@ -308,9 +308,9 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
     _countdownTimer?.cancel();
     _acceptedSub?.cancel();
     _stateSub?.cancel();
-    if (widget.enableRealtime) {
-      _socket.disconnect();
-    }
+    // The ride socket deliberately survives this screen: pushReplacement to
+    // DriverAssignedScreen happens just before dispose, and that screen keeps
+    // subscribing for live driver-location updates.
     super.dispose();
   }
 

@@ -205,11 +205,13 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
   ///  • IN_PROGRESS (or any live state) → the Trip in Progress screen, which
   ///    re-loads the ride and shows the current locations
   ///  • PAYMENT_PENDING → the payment screen
+  ///  • EARLY_DROPOFF_* → the completed-trip screen (rider's terminal state
+  ///    for an early drop-off — never strand the user on the trip screen)
   ///  • COMPLETED / CANCELLED → trip details in a modal
   void _openRide(RideHistoryItem item) {
     final status = item.status.toUpperCase();
 
-    if (status.contains('PAYMENT')) {
+    if (status.contains('PAYMENT') || status.contains('EARLY')) {
       Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => TripCompletedScreen(
@@ -230,7 +232,6 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
         status.contains('ARRIVED') ||
         status.contains('ACCEPTED') ||
         status.contains('REQUEST') ||
-        status.contains('EARLY') ||
         status.contains('STOP');
     if (isLive && item.id.isNotEmpty) {
       Navigator.of(context).push(

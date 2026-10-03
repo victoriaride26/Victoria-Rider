@@ -130,7 +130,7 @@ class _RiderNotificationsScreenState extends State<RiderNotificationsScreen> {
                           'Notifications',
                           style: theme.textTheme.titleLarge?.copyWith(
                             color: AppColors.primary,
-                            fontSize: 17.6, // 22 * 0.8
+                            fontSize: 22,
                           ),
                         ),
                       ),
@@ -151,14 +151,14 @@ class _RiderNotificationsScreenState extends State<RiderNotificationsScreen> {
                         },
                         child: Text(
                           'Clear all',
-                          style: TextStyle(fontSize: 12.5, color: _service.items.isEmpty ? AppColors.onSurfaceVariant : AppColors.error), // 14 * 0.8
+                          style: TextStyle(fontSize: 14, color: _service.items.isEmpty ? AppColors.onSurfaceVariant : AppColors.error),
                         ),
                       ),
                       TextButton(
                         onPressed: _service.unreadCount == 0 ? null : _service.markAllRead,
                         child: Text(
                           'Mark all read',
-                          style: TextStyle(fontSize: 12.5), // 14 * 0.8
+                          style: TextStyle(fontSize: 14),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -177,13 +177,15 @@ class _RiderNotificationsScreenState extends State<RiderNotificationsScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.notifications_none, size: 58, color: AppColors.onSurfaceVariant.withValues(alpha: 0.4)), // 72 * 0.8
+                          // Icons don't follow TextScaler — keep the shrunk
+                          // size manually so it matches the 0.8 text scale.
+                          Icon(Icons.notifications_none, size: 58, color: AppColors.onSurfaceVariant.withValues(alpha: 0.4)),
                           const SizedBox(height: 13),
                           Text('No notifications yet',
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.onSurface,
-                                fontSize: 14, // 16 * 0.8
+                                                fontSize: 16,
                               )),
                           const SizedBox(height: 6),
                           Padding(
@@ -192,7 +194,7 @@ class _RiderNotificationsScreenState extends State<RiderNotificationsScreen> {
                               'Ride updates, payments and promos will appear here. They are curated and saved on your device.',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: AppColors.onSurfaceVariant,
-                                fontSize: 10.6, // 12 * 0.8
+                                fontSize: 12,
                                 height: 1.35,
                               ),
                               textAlign: TextAlign.center,
@@ -253,7 +255,7 @@ class _RiderNotificationsScreenState extends State<RiderNotificationsScreen> {
                                               style: theme.textTheme.bodyMedium?.copyWith(
                                                 fontWeight: FontWeight.w700,
                                                 color: AppColors.onSurface,
-                                                fontSize: 14, // 16 * 0.8
+                                fontSize: 16,
                                                 height: 1.2,
                                               ),
                                             ),
@@ -283,7 +285,7 @@ class _RiderNotificationsScreenState extends State<RiderNotificationsScreen> {
                                           Text(_timeLabel(item.createdAt),
                                               style: theme.textTheme.labelSmall?.copyWith(
                                                 color: AppColors.onSurfaceVariant,
-                                                fontSize: 9.7, // 11 * 0.8
+                                                fontSize: 11,
                                                 fontWeight: FontWeight.w500,
                                               )),
                                           if (!item.read) ...[
@@ -292,7 +294,7 @@ class _RiderNotificationsScreenState extends State<RiderNotificationsScreen> {
                                             const SizedBox(width: 4),
                                             Text('New',
                                                 style: TextStyle(
-                                                  fontSize: 9.7,
+                                                  fontSize: 11,
                                                   fontWeight: FontWeight.w700,
                                                   color: AppColors.primary,
                                                 )),
@@ -304,7 +306,7 @@ class _RiderNotificationsScreenState extends State<RiderNotificationsScreen> {
                                         item.body,
                                         style: theme.textTheme.bodySmall?.copyWith(
                                           color: AppColors.onSurfaceVariant,
-                                          fontSize: 12.5, // 14 * 0.8
+                                          fontSize: 14,
                                           height: 1.35,
                                           fontWeight: FontWeight.w400,
                                         ),

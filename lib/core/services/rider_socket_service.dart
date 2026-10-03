@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
@@ -515,6 +516,7 @@ class RiderSocketService {
       }
 
       _socket!.on('driver:location', handleLocationUpdate);
+      _socket!.on('driver:location:update', handleLocationUpdate);
       _socket!.on('ride:driver:location', handleLocationUpdate);
       _socket!.on('driver:position', handleLocationUpdate);
       _socket!.on('location:update', handleLocationUpdate);
@@ -563,6 +565,10 @@ class RiderSocketService {
     }
   }
 
+  Timer? _riderEmitTimer;
+  StreamSubscription<Position>? _riderPositionSub;
+  Position? _lastRiderPosition;
+
   /// Subscribes the rider app to the ride's live tracking room.
   /// The backend continuously streams the driver's GPS coordinates to this room.
   void subscribeToRideTracking(String rideId) {
@@ -577,6 +583,61 @@ class RiderSocketService {
     _socket!.emit('ride:track', {'rideId': rideId});
     _socket!.emit('track:ride', {'rideId': rideId});
     _socket!.emit('subscribe:tracking', {'rideId': rideId});
+    _startRiderLocationEmission();
+  }
+
+  /// Streams the rider's own GPS position to the active ride room, mirroring
+  /// the driver's `driver:location:update` pattern: every ~5 m of movement
+  /// plus a 5 s heartbeat that re-sends the last fix.
+  void _startRiderLocationEmission() {
+    _riderEmitTimer?.cancel();
+    _riderPositionSub?.cancel();
+    try {
+      _riderPositionSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 5,
+        ),
+      ).listen(
+        (pos) {
+          _lastRiderPosition = pos;
+          _emitRiderLocation(pos);
+        },
+        onError: (_) {},
+      );
+    } catch (_) {
+      // Geolocation unavailable (tests / restricted env) — the heartbeat
+      // below still re-emits any last known fix.
+    }
+    _riderEmitTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      final pos = _lastRiderPosition;
+      if (pos != null) _emitRiderLocation(pos);
+    });
+  }
+
+  void _stopRiderLocationEmission() {
+    _riderEmitTimer?.cancel();
+    _riderEmitTimer = null;
+    _riderPositionSub?.cancel();
+    _riderPositionSub = null;
+    _lastRiderPosition = null;
+  }
+
+  void _emitRiderLocation(Position pos) {
+    final socket = _socket;
+    final rideId = _activeTrackingRideId;
+    if (socket == null || !_isConnected || rideId == null || rideId.isEmpty) {
+      return;
+    }
+    socket.emit('rider:location:update', {
+      'latitude': pos.latitude,
+      'longitude': pos.longitude,
+      'accuracy': pos.accuracy,
+      'heading': pos.heading,
+      'speed': pos.speed,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'rideId': rideId,
+    });
   }
 
   /// Alias for [subscribeToRideTracking]. Joins room for ride updates and chat.
@@ -586,6 +647,7 @@ class RiderSocketService {
   void leaveRideRoom(String rideId) {
     if (_activeTrackingRideId == rideId) {
       _activeTrackingRideId = null;
+      _stopRiderLocationEmission();
     }
     if (_socket != null && _isConnected) {
       _socket!.emit('ride:leave', {'rideId': rideId});
@@ -644,6 +706,7 @@ class RiderSocketService {
   /// Disconnects and cleans up socket resources.
   void disconnect() {
     _activeTrackingRideId = null;
+    _stopRiderLocationEmission();
     try {
       if (_socket != null) {
         _socket!.disconnect();

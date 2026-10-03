@@ -260,7 +260,9 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
               status == 'CANCELLED' ||
               status == 'CANCELED' ||
               status == 'ENDED' ||
-              status == 'PAYMENT_PENDING') {
+              status == 'PAYMENT_PENDING' ||
+              status == 'EARLY_DROPOFF_CONFIRMED' ||
+              status == 'EARLYDROPOFFCONFIRMED') {
             _handleRideTerminated(data);
           } else {
             _updateLiveFare(data);
@@ -377,7 +379,9 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           status == 'CANCELLED' ||
           status == 'CANCELED' ||
           status == 'ENDED' ||
-          status == 'PAYMENT_PENDING') {
+          status == 'PAYMENT_PENDING' ||
+          status == 'EARLY_DROPOFF_CONFIRMED' ||
+          status == 'EARLYDROPOFFCONFIRMED') {
         _handleRideTerminated(data ?? {});
       } else if (mounted) {
         // Ride-level payloads only carry explicitly threshold-named keys —

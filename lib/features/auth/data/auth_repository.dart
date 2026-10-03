@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/fcm_service.dart';
+import '../../../../core/services/rider_socket_service.dart';
 import '../../../../core/services/session_controller.dart';
 
 /// Social identity providers supported by `/auth/social-login`.
@@ -157,6 +158,8 @@ class AuthRepository {
       }
     } finally {
       await SessionController.instance.clear();
+      // Drop the authenticated socket — it must not outlive the session.
+      RiderSocketService.instance.disconnect();
     }
   }
 

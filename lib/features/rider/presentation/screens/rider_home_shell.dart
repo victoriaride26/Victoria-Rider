@@ -84,7 +84,12 @@ class _RiderHomeShellState extends State<RiderHomeShell>
       // second copy of a screen the rider already has open.
       if (!_recoveredKeys.add('$rideId:$rawStatus')) return;
 
-      if (rawStatus.contains('PAYMENT')) {
+      // A confirmed early drop-off is terminal for the rider: the fare is
+      // locked and the trip only needs paying. A pending request is still a
+      // live trip (the rider must confirm the recalculated fare first).
+      final isEarlyConfirmed =
+          rawStatus.contains('EARLY') && rawStatus.contains('CONFIRM');
+      if (rawStatus.contains('PAYMENT') || isEarlyConfirmed) {
         await _recoverPayment(data, rideId);
       } else {
         await _recoverTrip(data, rideId);
