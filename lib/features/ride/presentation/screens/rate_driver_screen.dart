@@ -132,7 +132,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final firstName = (widget.driverName ?? 'Terwase').split(' ').first;
+    final firstName = (widget.driverName ?? 'Driver').split(' ').first;
 
     return Scaffold(
       appBar: AppBar(

@@ -20,8 +20,13 @@ abstract final class AppRouter {
     try {
       await AuthRepository.instance.me();
       return true;
-    } on ApiException {
-      return false;
+    } on ApiException catch (e) {
+      if (e.isUnauthorized) {
+        return false;
+      }
+      return true;
+    } catch (_) {
+      return true;
     }
   }
 

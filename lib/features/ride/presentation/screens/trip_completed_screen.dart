@@ -116,7 +116,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
     final theme = Theme.of(context);
     final fareNgn = _fareNgn ?? widget.fareNgn;
     final fareText = fareNgn != null ? '₦${fareNgn.toStringAsFixed(0)}' : '—';
-    final name = widget.driverName ?? 'Adeola Johnson';
+    final name = widget.driverName ?? 'Your driver';
     final cleanPickup = _cleanAddress(widget.pickupAddress, 'Wurukum Roundabout, Makurdi');
     final cleanDropoff = _cleanAddress(widget.dropoffAddress, 'High Level Market, Makurdi');
 
