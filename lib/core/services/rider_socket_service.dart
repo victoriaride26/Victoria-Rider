@@ -42,27 +42,27 @@ class DriverLocationUpdate {
     double lat = 0.0;
     double lng = 0.0;
 
-    if (map['latitude'] is num) {
-      lat = (map['latitude'] as num).toDouble();
-    } else if (map['lat'] is num) {
-      lat = (map['lat'] as num).toDouble();
+    if (map['latitude'] != null) {
+      lat = double.tryParse(map['latitude'].toString()) ?? 0.0;
+    } else if (map['lat'] != null) {
+      lat = double.tryParse(map['lat'].toString()) ?? 0.0;
     }
 
-    if (map['longitude'] is num) {
-      lng = (map['longitude'] as num).toDouble();
-    } else if (map['lng'] is num) {
-      lng = (map['lng'] as num).toDouble();
+    if (map['longitude'] != null) {
+      lng = double.tryParse(map['longitude'].toString()) ?? 0.0;
+    } else if (map['lng'] != null) {
+      lng = double.tryParse(map['lng'].toString()) ?? 0.0;
     }
 
     if (lat == 0.0 && lng == 0.0) {
       final loc = map['location'] ?? map['coords'] ?? map['position'];
       if (loc is Map) {
-        lat = (loc['latitude'] ?? loc['lat'] ?? 0.0).toDouble();
-        lng = (loc['longitude'] ?? loc['lng'] ?? 0.0).toDouble();
+        lat = double.tryParse((loc['latitude'] ?? loc['lat']).toString()) ?? 0.0;
+        lng = double.tryParse((loc['longitude'] ?? loc['lng']).toString()) ?? 0.0;
       } else if (map['coordinates'] is List &&
           (map['coordinates'] as List).length >= 2) {
-        lng = ((map['coordinates'] as List)[0] as num).toDouble();
-        lat = ((map['coordinates'] as List)[1] as num).toDouble();
+        lng = double.tryParse((map['coordinates'] as List)[0].toString()) ?? 0.0;
+        lat = double.tryParse((map['coordinates'] as List)[1].toString()) ?? 0.0;
       }
     }
 

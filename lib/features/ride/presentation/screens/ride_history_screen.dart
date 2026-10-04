@@ -220,6 +220,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             pickupAddress: item.pickupAddress,
             dropoffAddress: item.dropoffAddress,
             isPaymentConfirmed: false,
+            driverRating: item.driverRating,
           ),
         ),
       );
@@ -681,6 +682,7 @@ class RideHistoryItem {
   final double? settledFareNgn;
   final String pickupAddress;
   final String dropoffAddress;
+  final double? driverRating;
 
   const RideHistoryItem({
     required this.id,
@@ -690,6 +692,7 @@ class RideHistoryItem {
     this.settledFareNgn,
     required this.pickupAddress,
     required this.dropoffAddress,
+    this.driverRating,
   });
 
   factory RideHistoryItem.fromJson(Map<String, dynamic> json) {
@@ -732,6 +735,9 @@ class RideHistoryItem {
       settledFareNgn: settled,
       pickupAddress: pickupAddr.trim(),
       dropoffAddress: dropoffAddr.trim(),
+      driverRating: (j['driver']?['rating'] ?? j['driverRating']) is num
+          ? (j['driver']?['rating'] ?? j['driverRating']).toDouble()
+          : null,
     );
   }
 

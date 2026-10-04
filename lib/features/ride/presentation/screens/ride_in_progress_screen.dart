@@ -20,7 +20,6 @@ import '../../../../core/widgets/mapbox_map_view.dart';
 import '../../../rider/presentation/screens/rider_home_shell.dart';
 import '../../data/support_contacts.dart';
 import '../widgets/in_ride_chat_sheet.dart';
-import '../widgets/ride_payment_sheet.dart';
 import '../widgets/support_contacts_sheet.dart';
 import 'trip_completed_screen.dart';
 
@@ -47,6 +46,7 @@ class RideInProgressScreen extends StatefulWidget {
     this.paymentMethod,
     this.pickupAddress,
     this.dropoffAddress,
+    this.driverRating,
   });
 
   final String? rideId;
@@ -62,6 +62,7 @@ class RideInProgressScreen extends StatefulWidget {
   final String? paymentMethod;
   final String? pickupAddress;
   final String? dropoffAddress;
+  final double? driverRating;
 
   @override
   State<RideInProgressScreen> createState() => _RideInProgressScreenState();
@@ -265,6 +266,22 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
               status == 'EARLYDROPOFFCONFIRMED') {
             _handleRideTerminated(data);
           } else {
+            if (status != null && (status == 'IN_PROGRESS' || status == 'INPROGRESS') && data['message'] != null) {
+              if (data['message'].toString().toLowerCase().contains('rejected early drop-off')) {
+                if (mounted) {
+                  setState(() {
+                    _earlyDropoffRequested = false;
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(data['message'].toString()),
+                      backgroundColor: AppColors.error,
+                      duration: const Duration(seconds: 4),
+                    ),
+                  );
+                }
+              }
+            }
             _updateLiveFare(data);
           }
         }
@@ -391,6 +408,20 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           _stops = data?['stops'] ?? data?['stopovers'] ?? _stops;
         });
 
+        if ((status == 'IN_PROGRESS' || status == 'INPROGRESS') && data?['message'] != null) {
+          if (data!['message'].toString().toLowerCase().contains('rejected early drop-off')) {
+            setState(() {
+              _earlyDropoffRequested = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(data['message'].toString()),
+                backgroundColor: AppColors.error,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+        }
         _updateLiveFare(data);
       }
     } catch (_) {}
@@ -982,38 +1013,26 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
     final activePaymentMethod = _activePaymentMethod ?? widget.paymentMethod;
 
-    void pushReceipt(bool confirmed) {
-      if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(
-          builder: (_) => TripCompletedScreen(
-            rideId: widget.rideId,
-            driverName: widget.driverName,
-            fareNgn: fare,
-            pickupAddress: _resolvedPickupAddress,
-            dropoffAddress: _resolvedDropoffAddress,
-            paymentMethod: activePaymentMethod,
-            isPaymentConfirmed: confirmed,
-          ),
+    // Required order: End Trip -> Trip Completed -> Payment -> Rate Driver
+    // -> Dashboard. Payment is owned by TripCompletedScreen (Pay button when
+    // pending), so always land on the receipt first — never show the payment
+    // sheet on top of the in-progress screen.
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => TripCompletedScreen(
+          rideId: widget.rideId,
+          driverName: widget.driverName,
+          fareNgn: fare,
+          pickupAddress: _resolvedPickupAddress,
+          dropoffAddress: _resolvedDropoffAddress,
+          paymentMethod: activePaymentMethod,
+          isPaymentConfirmed: isPaymentConfirmed,
+          driverRating: widget.driverRating,
         ),
-        (route) => route.isFirst,
-      );
-    }
-
-    if (!isPaymentConfirmed && (activePaymentMethod?.toUpperCase() != 'CASH')) {
-      RidePaymentSheet.show(
-        context,
-        rideId: widget.rideId,
-        fareNgn: fare,
-        driverName: widget.driverName,
-        paymentMethod: activePaymentMethod,
-        onPaymentConfirmed: (confirmed) {
-          pushReceipt(confirmed);
-        },
-      );
-    } else {
-      pushReceipt(isPaymentConfirmed);
-    }
+      ),
+      (route) => route.isFirst,
+    );
   }
 
   Future<void> _callDriver() async {

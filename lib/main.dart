@@ -66,13 +66,13 @@ class VTRidesApp extends StatelessWidget {
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      // Uniform −20% text scale for every screen, composed with the OS
+      // Uniform text scale for every screen, composed with the OS
       // accessibility scale so large-font users keep their relative size.
       builder: (context, child) {
         final media = MediaQuery.of(context);
         return MediaQuery(
           data: media.copyWith(
-            textScaler: TextScaler.linear(0.8 * media.textScaler.scale(1.0)),
+            textScaler: TextScaler.linear(0.87 * media.textScaler.scale(1.0)),
           ),
           child: child ?? const SizedBox.shrink(),
         );

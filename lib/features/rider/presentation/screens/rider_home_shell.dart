@@ -149,6 +149,9 @@ class _RiderHomeShellState extends State<RiderHomeShell>
           pickupLatLng: _latLngOf(data['pickup']),
           destinationLatLng: _latLngOf(data['dropoff']),
           destinationLabel: _addressOf(data['dropoff']),
+          driverRating: (driver['rating'] ?? data['driverRating']) is num
+              ? (driver['rating'] ?? data['driverRating']).toDouble()
+              : null,
         ),
       ),
     );

@@ -303,8 +303,12 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
         setState(() {
           _step = _PaymentStep.success;
         });
-        widget.onPaymentConfirmed(true);
+        // Dismiss the sheet BEFORE notifying the caller: the callback may
+        // push a new route on the root navigator, and popping afterwards
+        // would remove that new route (skipping the Rate Driver screen).
+        final onConfirmed = widget.onPaymentConfirmed;
         if (mounted) Navigator.of(context).pop(true);
+        onConfirmed(true);
       } else {
         if (!mounted) return;
         setState(() {

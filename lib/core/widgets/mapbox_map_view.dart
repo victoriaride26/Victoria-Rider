@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -63,6 +64,7 @@ class _MapboxMapViewState extends State<MapboxMapView> {
   bool _showLoading = true;
   bool _mapboxFailed = false;
   int _mapboxFailCount = 0;
+  bool _isFollowing = false;
 
   LatLng? _userPosition;
   LatLng? _lastPosition;
@@ -74,6 +76,16 @@ class _MapboxMapViewState extends State<MapboxMapView> {
   @override
   void initState() {
     super.initState();
+    _isFollowing = widget.followUser;
+    _controller.mapEventStream.listen((event) {
+      if (event.source == MapEventSource.dragStart ||
+          event.source == MapEventSource.onDrag ||
+          event.source == MapEventSource.scrollWheel) {
+        if (_isFollowing && mounted) {
+          setState(() => _isFollowing = false);
+        }
+      }
+    });
     _loadingTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _showLoading = false);
     });
@@ -88,7 +100,10 @@ class _MapboxMapViewState extends State<MapboxMapView> {
     if (!widget.followUser &&
         (widget.center != oldWidget.center || widget.zoom != oldWidget.zoom)) {
       try {
-        _controller.move(widget.center, widget.zoom);
+        _controller.move(
+          _getOffsetCenter(widget.center, widget.zoom),
+          widget.zoom,
+        );
       } catch (_) {}
     }
   }
@@ -113,45 +128,53 @@ class _MapboxMapViewState extends State<MapboxMapView> {
     }
   }
 
-Future<void> _initLocation() async {
-  try {
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (!mounted) return;
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      setState(() => _locationDenied = true);
-      return;
-    }
+  Future<void> _initLocation() async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (!mounted) return;
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        setState(() => _locationDenied = true);
+        return;
+      }
 
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!mounted) return;
-    if (!serviceEnabled) {
-      setState(() => _locationServiceOff = true);
-      return;
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!mounted) return;
+      if (!serviceEnabled) {
+        setState(() => _locationServiceOff = true);
+        return;
+      }
+
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) _handlePosition(lastKnown);
+
+      _positionSub =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 5,
+            ),
+          ).listen(
+            _handlePosition,
+            onError: (_) {
+              if (mounted) setState(() => _locationServiceOff = true);
+            },
+          );
+    } catch (_) {
+      // Geolocation may be unavailable (e.g. in widget tests or restricted
+      // environments); degrade to a static map.
     }
-
-    final lastKnown = await Geolocator.getLastKnownPosition();
-    if (lastKnown != null) _handlePosition(lastKnown);
-
-    _positionSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
-      ),
-    ).listen(
-      _handlePosition,
-      onError: (_) {
-        if (mounted) setState(() => _locationServiceOff = true);
-      },
-    );
-  } catch (_) {
-    // Geolocation may be unavailable (e.g. in widget tests or restricted
-    // environments); degrade to a static map.
   }
-}
+
+  LatLng _getOffsetCenter(LatLng center, double zoom) {
+    // Shift center UP on the screen by offsetting latitude DOWN.
+    // At zoom 14, 0.005 degrees latitude is roughly 1/4 of the screen.
+    final latOffset = 0.005 * (14.0 / (zoom > 0 ? zoom : 14.0));
+    return LatLng(center.latitude - latOffset, center.longitude);
+  }
 
   void _handlePosition(Position position) {
     if (!mounted) return;
@@ -245,7 +268,7 @@ Future<void> _initLocation() async {
         FlutterMap(
           mapController: _controller,
           options: MapOptions(
-            initialCenter: widget.center,
+            initialCenter: _getOffsetCenter(widget.center, widget.zoom),
             initialZoom: widget.zoom,
             interactionOptions: InteractionOptions(
               flags: widget.interactive
@@ -285,10 +308,41 @@ Future<void> _initLocation() async {
               ),
           ],
         ),
+        if (!_isFollowing && widget.followUser)
+          Positioned(
+            bottom: 24,
+            right: 16,
+            child: FloatingActionButton(
+              mini: true,
+              backgroundColor: AppColors.surface,
+              onPressed: () {
+                setState(() => _isFollowing = true);
+                if (_userPosition != null) {
+                  try {
+                    final currentZoom = _controller.camera.zoom;
+                    _controller.move(
+                      _getOffsetCenter(_userPosition!, currentZoom),
+                      currentZoom,
+                    );
+                  } catch (_) {
+                    _controller.move(
+                      _getOffsetCenter(_userPosition!, widget.zoom),
+                      widget.zoom,
+                    );
+                  }
+                }
+              },
+              child: Icon(Icons.my_location, color: AppColors.primary),
+            ),
+          ),
         if (_locationDenied)
-          _buildLocationBanner('Location permission denied — enable it to see your position')
+          _buildLocationBanner(
+            'Location permission denied — enable it to see your position',
+          )
         else if (_locationServiceOff)
-          _buildLocationBanner('Location services off — turn on GPS to see your position')
+          _buildLocationBanner(
+            'Location services off — turn on GPS to see your position',
+          )
         else if (_errors.isNotEmpty)
           Positioned(
             top: 12,
@@ -297,8 +351,10 @@ Future<void> _initLocation() async {
             child: Center(
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 24),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.75),
                   borderRadius: BorderRadius.circular(16),
@@ -312,7 +368,9 @@ Future<void> _initLocation() async {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            color: Colors.white, fontSize: 12),
+                          color: Colors.white,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),

@@ -12,6 +12,7 @@ import '../../../../core/services/rider_socket_service.dart';
 import '../../../../core/services/rider_chat_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/fare_parser.dart';
+import '../../../../core/utils/rating_tier_helper.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
 import '../../../../core/widgets/driver_avatar.dart';
@@ -215,6 +216,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
             paymentMethod: widget.paymentMethod,
             pickupAddress: widget.pickupLabel,
             dropoffAddress: widget.destinationLabel,
+            driverRating: widget.driverRating,
           ),
         ),
         (route) => route.isFirst,
@@ -339,6 +341,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
     final rating = widget.driverRating != null
         ? '⭐ ${widget.driverRating!.toStringAsFixed(1)}'
         : '⭐ New';
+    final tierLabel = RatingTierHelper.tierLabelFor(widget.driverRating);
     final vehicle = widget.vehicleModel ?? 'Vehicle Details';
     final plate = widget.plateNumber ?? 'Plate Info';
 
@@ -596,7 +599,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          '$rating  •  Verified Victoria Driver',
+                                          '$rating  •  $tierLabel',
                                           style: const TextStyle(
                                             color: AppColors.onSurfaceVariant,
                                             fontSize: 13,
@@ -769,6 +772,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
                                         paymentMethod: widget.paymentMethod,
                                         pickupAddress: widget.pickupLabel,
                                         dropoffAddress: widget.destinationLabel,
+                                        driverRating: widget.driverRating,
                                       ),
                                     ),
                                     (route) => route.isFirst,

@@ -4,6 +4,7 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/fare_parser.dart';
+import '../../../../core/utils/rating_tier_helper.dart';
 import '../../../../core/widgets/app_primary_button.dart';
 import '../../../rider/presentation/screens/rider_home_shell.dart';
 import '../widgets/ride_payment_sheet.dart';
@@ -20,6 +21,7 @@ class TripCompletedScreen extends StatefulWidget {
     this.dropoffAddress,
     this.paymentMethod,
     this.isPaymentConfirmed = true,
+    this.driverRating,
   });
 
   final String? rideId;
@@ -29,6 +31,7 @@ class TripCompletedScreen extends StatefulWidget {
   final String? dropoffAddress;
   final String? paymentMethod;
   final bool isPaymentConfirmed;
+  final double? driverRating;
 
   @override
   State<TripCompletedScreen> createState() => _TripCompletedScreenState();
@@ -330,12 +333,14 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
                           ),
                         ),
                         Row(
-                          children: const [
-                            Icon(Icons.star, color: Colors.amber, size: 16),
-                            SizedBox(width: 4),
+                          children: [
+                            const Icon(Icons.star, color: Colors.amber, size: 16),
+                            const SizedBox(width: 4),
                             Text(
-                              '4.9 • Executive',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                              widget.driverRating != null
+                                  ? '${widget.driverRating!.toStringAsFixed(1)} • ${RatingTierHelper.tierLabelFor(widget.driverRating)}'
+                                  : 'New • ${RatingTierHelper.tierLabelFor(widget.driverRating)}',
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                             ),
                           ],
                         ),
