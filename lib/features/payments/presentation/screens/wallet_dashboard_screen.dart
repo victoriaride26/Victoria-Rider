@@ -23,12 +23,13 @@ class _WalletDashboardScreenState extends State<WalletDashboardScreen> {
   bool _loading = false;
   List<WalletTransaction> _transactions = [];
   List<RiderBankAccount> _bankAccounts = [];
+  // Hidden for now (withdrawals) — kept for the restore.
+  // ignore: unused_field
   bool _withdrawLoading = false;
 
+  // Hidden for now: Transfer and Gift Card return when enabled backend-side.
   static const List<_Action> _actions = [
     _Action(Icons.add_circle, 'Add Funds'),
-    _Action(Icons.swap_horiz, 'Transfer'),
-    _Action(Icons.card_giftcard, 'Gift Card'),
   ];
 
   RiderBankAccount? get _defaultAccount => _bankAccounts.where((b) => b.isDefault).isNotEmpty
@@ -74,6 +75,8 @@ class _WalletDashboardScreenState extends State<WalletDashboardScreen> {
     );
   }
 
+  // Hidden for now (withdrawals) — kept for the restore.
+  // ignore: unused_element
   Future<void> _withdraw() async {
     final account = _defaultAccount;
     if (account == null) {
@@ -193,31 +196,14 @@ class _WalletDashboardScreenState extends State<WalletDashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Total Balance',
                           style: TextStyle(color: AppColors.onPrimary),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.onPrimary.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.verified, size: 14, color: AppColors.onPrimary),
-                              const SizedBox(width: 6),
-                              Text(
-                                _defaultAccount == null ? 'No payout account' : '${_defaultAccount!.bankName} ${ _defaultAccount!.accountMask}',
-                                style: const TextStyle(color: AppColors.onPrimary, fontSize: 11, fontWeight: FontWeight.w600),
-                              ),
-                            ],
-                          ),
-                        ),
+                        // Hidden for now: payout-account badge returns with withdrawals.
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -232,90 +218,29 @@ class _WalletDashboardScreenState extends State<WalletDashboardScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _bankAccounts.isEmpty ? 'Add a bank account to withdraw' : 'Ready for withdrawals',
+                      'Available for ride payments',
                       style: TextStyle(color: AppColors.onPrimary.withValues(alpha: 0.8), fontSize: 12),
                     ),
                     const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 44,
-                            child: FilledButton.icon(
-                              onPressed: _openFundWalletSheet,
-                              icon: const Icon(Icons.add_card_rounded, size: 18),
-                              label: const Text('Fund', style: TextStyle(fontWeight: FontWeight.w700)),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.onPrimary,
-                                foregroundColor: AppColors.primary,
-                              ),
-                            ),
-                          ),
+                    // Hidden for now: Withdraw button returns with withdrawals.
+                    SizedBox(
+                      height: 44,
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _openFundWalletSheet,
+                        icon: const Icon(Icons.add_card_rounded, size: 18),
+                        label: const Text('Fund', style: TextStyle(fontWeight: FontWeight.w700)),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.onPrimary,
+                          foregroundColor: AppColors.primary,
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: SizedBox(
-                            height: 44,
-                            child: FilledButton.icon(
-                              onPressed: _withdrawLoading ? null : _withdraw,
-                              icon: _withdrawLoading
-                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.onPrimary))
-                                  : const Icon(Icons.arrow_upward_rounded, size: 18),
-                              label: Text(_withdrawLoading ? '...' : 'Withdraw', style: const TextStyle(fontWeight: FontWeight.w700)),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.onPrimary.withValues(alpha: 0.15),
-                                foregroundColor: AppColors.onPrimary,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
-              // Rider payout account card
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLowest,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.outlineVariant),
-                ),
-                child: Row(
-                  children: [
-                    const CircleAvatar(
-                      radius: 20,
-                      backgroundColor: AppColors.surfaceContainerHigh,
-                      child: Icon(Icons.account_balance_outlined, size: 20, color: AppColors.onSurface),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _defaultAccount == null ? 'No payout account' : '${_defaultAccount!.bankName} ${_defaultAccount!.accountMask}',
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700, color: AppColors.onSurface),
-                          ),
-                          Text(
-                            _defaultAccount == null ? 'Tap Manage to add bank' : (_defaultAccount!.accountName.isNotEmpty ? _defaultAccount!.accountName : 'Default payout method'),
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(color: AppColors.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () async {
-                        final result = await _showAddBankAccountSheet();
-                        if (result == true) _loadData();
-                      },
-                      child: Text(_bankAccounts.isEmpty ? 'Add' : 'Manage'),
-                    ),
-                  ],
-                ),
-              ),
+              // Hidden for now: rider payout account card returns with withdrawals.
               const SizedBox(height: 20),
 
               // Action Buttons Row

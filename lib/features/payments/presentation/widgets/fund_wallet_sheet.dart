@@ -56,6 +56,7 @@ class _FundWalletSheetState extends State<FundWalletSheet>
   String? _currentReference;
   double _fundedAmount = 0.0;
   double? _newBalance;
+  double? _creditedAmount;
   WebViewController? _webViewController;
   double? _pageProgress;
   bool _verificationStarted = false;
@@ -223,17 +224,25 @@ class _FundWalletSheetState extends State<FundWalletSheet>
     try {
       final verified = await _walletRepo.verifyFunding(ref);
       if (verified) {
+        final previousBal = widget.currentBalance ?? 0;
         // Fetch fresh balance
-        double updatedBal = (_fundedAmount + (widget.currentBalance ?? 0));
+        double updatedBal = (_fundedAmount + previousBal);
         try {
           updatedBal = await _walletRepo.getBalance();
         } catch (_) {}
 
         if (!mounted) return;
 
+        // Report what was actually credited (fresh delta), not the gross
+        // checkout amount: backends that net off Paystack fees — or that
+        // credit minor units inconsistently — otherwise show a success
+        // message the header balance contradicts.
+        final credited = updatedBal - previousBal;
+
         setState(() {
           _step = _FundingStep.success;
           _newBalance = updatedBal;
+          _creditedAmount = credited > 0 ? credited : _fundedAmount;
         });
 
         widget.onFundingSuccess?.call(updatedBal);
@@ -737,9 +746,11 @@ class _FundWalletSheetState extends State<FundWalletSheet>
   }
 
   Widget _buildSuccessStep(ThemeData theme) {
-    final balanceText = _newBalance != null
-        ? '₦${_newBalance!.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}'
-        : null;
+    String fmt(double v) =>
+        '₦${v.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
+    final balanceText = _newBalance != null ? fmt(_newBalance!) : null;
+    final creditedText =
+        _creditedAmount != null ? fmt(_creditedAmount!) : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -767,13 +778,27 @@ class _FundWalletSheetState extends State<FundWalletSheet>
         ),
         const SizedBox(height: 8),
         Text(
-          '₦${_fundedAmount.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} has been added to your Victoria Rides wallet.',
+          creditedText != null
+              ? '$creditedText has been credited to your Victoria Rides wallet.'
+              : 'Your Victoria Rides wallet has been funded.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: AppColors.onSurfaceVariant,
             fontSize: 15,
           ),
           textAlign: TextAlign.center,
         ),
+        if (creditedText != null &&
+            (_creditedAmount! - _fundedAmount).abs() > 0.009) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Paid ₦${_fundedAmount.toStringAsFixed(2)} — the difference is the gateway deduction applied before credit.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.onSurfaceVariant,
+              fontSize: 12,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
         if (balanceText != null) ...[
           const SizedBox(height: 16),
           Container(

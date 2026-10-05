@@ -21,11 +21,8 @@ class RateDriverScreen extends StatefulWidget {
 class _RateDriverScreenState extends State<RateDriverScreen> {
   final _commentController = TextEditingController();
   int _rating = 0;
-  int? _tip;
   bool _isSubmitting = false;
   String? _errorMessage;
-
-  static const List<int> _tips = [200, 500, 1000];
 
   @override
   void dispose() {
@@ -56,11 +53,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
           'review': comment,
           'text': comment,
         },
-        if (_tip != null) ...{
-          'tipAmount': _tip,
-          'tip': _tip,
-          'tip_amount': _tip,
-        },
+        // Hidden for now: Add Tip returns with tipping backend-side.
       };
 
       // Primary endpoint per ApiConfig
@@ -77,7 +70,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
         try {
           await ApiClient.instance.post(endpoint, body: body);
           success = true;
-          debugPrint('[RateDriver] Rating saved via $endpoint rating=$_rating tip=$_tip');
+          debugPrint('[RateDriver] Rating saved via $endpoint rating=$_rating');
           break;
         } on ApiException catch (e) {
           lastError = e;
@@ -194,36 +187,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                 ],
               ),
               const SizedBox(height: 24),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Add a Tip', style: theme.textTheme.titleLarge),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  for (final t in _tips)
-                    Expanded(
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          right: t == _tips.last ? 0 : 12,
-                        ),
-                        child: ChoiceChip(
-                          label: Text('₦$t'),
-                          selected: _tip == t,
-                          onSelected: (_) =>
-                              setState(() => _tip = _tip == t ? null : t),
-                          selectedColor: AppColors.primaryContainer,
-                          labelStyle: TextStyle(
-                            color: _tip == t
-                                ? AppColors.onPrimaryContainer
-                                : AppColors.onSurface,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 20),
+              // Hidden for now: Add Tip chips return with tipping backend-side.
               TextField(
                 controller: _commentController,
                 maxLines: 3,

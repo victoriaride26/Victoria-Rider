@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 
@@ -165,6 +167,10 @@ class RiderWalletRepository {
   /// Calls `GET /api/v1/wallet`.
   Future<double> getBalance() async {
     final data = await _api.get(ApiConfig.riderWallet);
+    // Raw payload log: the header assumes kobo ints (int >= 100 → ÷100).
+    // If funding ₦5,000 shows as ₦50, compare this raw `balance` against the
+    // credited minor units — a backend double-conversion shows up here.
+    debugPrint('[RiderWallet] GET /wallet raw: $data');
     return _extractBalance(data);
   }
 
