@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "generated_at": "2026-10-03T10:36:18+00:00",
+ "generated_at": "2026-10-05T12:12:33+00:00",
  "state": "Benue",
  "towns": [
   "Makurdi",
@@ -9,7 +9,7 @@
   "Katsina-Ala",
   "Vandeikya"
  ],
- "entry_count": 2024,
+ "entry_count": 2025,
  "sources": [
   {
    "name": "curated",
@@ -106,7 +106,7 @@
    "historic-site": 3,
    "building-or-construction-service": 5,
    "military-site": 3,
-   "landmark": 4,
+   "landmark": 5,
    "high-school": 2,
    "bar": 17,
    "electronics-store": 9,
@@ -236,7 +236,7 @@
   "geonames": 655,
   "wikidata": 372,
   "overture": 1002,
-  "curated": 53
+  "curated": 54
  },
  "entries": [
   {
@@ -38208,6 +38208,28 @@
    ],
    "licenses": [],
    "notes": "Wikidata Q136723934; instance-of: school"
+  },
+  {
+   "id": "ng-benue-makurdi-victoria-atorough-tyough-complex",
+   "name": "Victoria Atorough Tyough Complex",
+   "aliases": [
+    "Atorough Tyough Complex"
+   ],
+   "locality": "Makurdi",
+   "lga": "Makurdi",
+   "state": "Benue",
+   "category": "landmark",
+   "lat": 7.724108,
+   "lng": 8.54578,
+   "precision": "exact",
+   "verified": true,
+   "sources": [
+    "curated"
+   ],
+   "licenses": [
+    "project-owned"
+   ],
+   "notes": "Added 2026-10-05; coords from Google Maps place pin"
   },
   {
    "id": "ov-e2a36b2d-0869-4eab-aa7c-f1ca2add788c",

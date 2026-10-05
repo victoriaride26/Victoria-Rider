@@ -35,3 +35,4 @@ ng-benue-makurdi-naval-base-kanshio,Naval Base Kanshio,Naval Base Makurdi|Nigeri
 ng-benue-makurdi-old-otukpo-road,Old Otukpo Road,Old Otukpo Rd|Otukpo Old Road,Makurdi,Makurdi,Benue,landmark,7.7100,8.4950,approximate,false,Draft; approximate point on the old Otukpo road south of town; needs verification
 ng-benue-makurdi-terwase-agbadu-street,Terwase Agbadu Street,Terwase Agbadu St,Makurdi,Makurdi,Benue,road,7.713603,8.583866,approximate,false,Draft; street in the Hange area of Makurdi; coords from user-provided map pin
 ng-benue-makurdi-hange,Hange,Hange District,Makurdi,Makurdi,Benue,district,7.7136,8.5839,approximate,false,Draft; district in NE Makurdi on the Gboko Rd corridor; coords approximate; verify
+ng-benue-makurdi-victoria-atorough-tyough-complex,Victoria Atorough Tyough Complex,Atorough Tyough Complex,Makurdi,Makurdi,Benue,landmark,7.724108,8.54578,exact,true,Added 2026-10-05; coords from Google Maps place pin
