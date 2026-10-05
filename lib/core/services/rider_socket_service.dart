@@ -470,6 +470,25 @@ class RiderSocketService {
       _socket!.on('ride:earlyDropoff:requested', handleEarlyDropoffFare);
       _socket!.on('ride:earlyDropoff', handleEarlyDropoffFare);
 
+      // ── 3c(ii). Early drop-off rejected (driver declined / rider withdrew):
+      // status reverses to IN_PROGRESS. Routed into the status stream with an
+      // explicit reject message so the trip screen resumes the original trip
+      // even when the generic ride:state broadcast is missed.
+      void handleEarlyDropoffRejected(dynamic data) {
+        debugPrint('[RiderSocket] Received early-dropoff rejected: $data');
+        final map = data is Map
+            ? Map<String, dynamic>.from(data)
+            : <String, dynamic>{'rideId': data.toString()};
+        map['status'] ??= 'IN_PROGRESS';
+        map['message'] ??= 'Early drop-off rejected — continuing your trip.';
+        _statusUpdateController.add(map);
+      }
+
+      _socket!.on('ride:early_dropoff:rejected', handleEarlyDropoffRejected);
+      _socket!.on('ride:early_dropoff_rejected', handleEarlyDropoffRejected);
+      _socket!.on('ride:earlyDropoff:rejected', handleEarlyDropoffRejected);
+      _socket!.on('ride:earlyDropoffRejected', handleEarlyDropoffRejected);
+
       // ── 3d. Stopover wait timer (confirmation_requested, confirmed, timer:start/completed) ──
       void handleStopoverTimer(dynamic data, String type) {
         debugPrint('[RiderSocket] Received stopover timer event: $data ($type)');

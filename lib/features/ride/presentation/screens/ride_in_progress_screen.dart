@@ -47,6 +47,7 @@ class RideInProgressScreen extends StatefulWidget {
     this.pickupAddress,
     this.dropoffAddress,
     this.driverRating,
+    this.initialWaitingForDriver = false,
   });
 
   final String? rideId;
@@ -63,6 +64,12 @@ class RideInProgressScreen extends StatefulWidget {
   final String? pickupAddress;
   final String? dropoffAddress;
   final double? driverRating;
+
+  /// Crash/restart recovery: the backend already holds EARLY_DROPOFF_CONFIRMED
+  /// (rider agreed the fare before the restart), so open directly in the
+  /// "waiting for driver" state instead of requiring another tap. The live
+  /// poll re-asserts this from the server either way.
+  final bool initialWaitingForDriver;
 
   @override
   State<RideInProgressScreen> createState() => _RideInProgressScreenState();
@@ -125,8 +132,25 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   String? _activePaymentMethod;
   List<dynamic> _stops = [];
 
-  // --- Early drop-off state ---
+  // --- Early drop-off state (ordered single-dialog flow) ---
+  // Tap → POST /early-dropoff → wait for the backend's recalculated fare →
+  // ONE confirm dialog (fare-gated) → POST /confirm → wait for the driver to
+  // pull over and POST /complete. A reject from either side (or a status
+  // reversal to IN_PROGRESS) resumes the original trip on both apps.
   bool _earlyDropoffRequested = false;
+  bool _waitingForDriver = false;
+  bool _earlyFareDialogOpen = false;
+  bool _serverSawEarlyDropoff = false;
+  bool _fareShown = false;
+  // Restart recovery: adopt a server-held REQUESTED once per screen session
+  // so the fare dialog appears without requiring another tap. Suppressed
+  // briefly after a user cancel so a stale poll can't resurrect the dialog.
+  bool _earlyAutoAdopted = false;
+  DateTime? _suppressAutoAdoptUntil;
+  double? _confirmedEarlyFareNgn;
+  Timer? _fareTimer;
+
+  bool get _earlyDropoffActive => _earlyDropoffRequested || _waitingForDriver;
 
   @override
   void initState() {
@@ -144,6 +168,13 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     _activePaymentMethod = widget.paymentMethod;
     _resolvedPickupAddress = widget.pickupAddress;
     _resolvedDropoffAddress = widget.dropoffAddress ?? widget.destinationLabel;
+
+    if (widget.initialWaitingForDriver) {
+      _earlyDropoffRequested = true;
+      _waitingForDriver = true;
+      _serverSawEarlyDropoff = true;
+      _fareShown = true;
+    }
 
     _resolveAddresses();
     _fetchInitialData();
@@ -261,28 +292,54 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
               status == 'CANCELLED' ||
               status == 'CANCELED' ||
               status == 'ENDED' ||
-              status == 'PAYMENT_PENDING' ||
-              status == 'EARLY_DROPOFF_CONFIRMED' ||
-              status == 'EARLYDROPOFFCONFIRMED') {
+              status == 'PAYMENT_PENDING') {
             _handleRideTerminated(data);
+          } else if (status == 'EARLY_DROPOFF_CONFIRMED' ||
+              status == 'EARLYDROPOFFCONFIRMED') {
+            // Rider confirmed the fare (possibly on another device, or the
+            // confirm POST raced this event): hold the waiting state for the
+            // driver's End Trip — never navigate until the trip completes.
+            _serverSawEarlyDropoff = true;
+            if (!_waitingForDriver && !_terminating && mounted) {
+              final fare = FareParser.finalFareNgn(data);
+              setState(() {
+                _waitingForDriver = true;
+                _earlyDropoffRequested = true;
+                if (fare != null && fare > 0) _confirmedEarlyFareNgn = fare;
+              });
+              _fareTimer?.cancel();
+            }
+            _updateLiveFare(data);
           } else {
-            if (status != null && (status == 'IN_PROGRESS' || status == 'INPROGRESS') && data['message'] != null) {
-              if (data['message'].toString().toLowerCase().contains('rejected early drop-off')) {
-                if (mounted) {
-                  setState(() {
-                    _earlyDropoffRequested = false;
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(data['message'].toString()),
-                      backgroundColor: AppColors.error,
-                      duration: const Duration(seconds: 4),
-                    ),
-                  );
-                }
+            if (status != null &&
+                (status == 'IN_PROGRESS' || status == 'INPROGRESS')) {
+              if (_isEarlyRejectedMessage(data['message'])) {
+                _resumeOriginalTrip(
+                  data['message']?.toString() ??
+                      'Early drop-off declined — continuing your trip.',
+                );
+              } else if (_serverSawEarlyDropoff &&
+                  !_payloadHasEarlyFlags(data) &&
+                  (_earlyDropoffRequested || _waitingForDriver)) {
+                // Backend reversed the request back to a clean IN_PROGRESS
+                // (driver rejected): resume the original trip on this app too.
+                _resumeOriginalTrip(
+                  'Early drop-off ended — continuing to your original destination.',
+                );
               }
             }
             _updateLiveFare(data);
+            // Backend may deliver the recalculated fare over the generic
+            // ride:state channel (status EARLY_DROPOFF_REQUESTED) instead of
+            // the dedicated early-dropoff socket event. Surface the single
+            // fare-gated confirmation from here too so the rider is never
+            // stuck waiting with no dialog.
+            if (status != null &&
+                status.contains('EARLY') &&
+                status.contains('REQUEST')) {
+              _serverSawEarlyDropoff = true;
+              _maybeShowEarlyDropoffFare(data);
+            }
           }
         }
       });
@@ -300,15 +357,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         final incomingId = (data['rideId'] ?? data['id'])?.toString();
         if (incomingId != null && incomingId != widget.rideId) return;
         if (!mounted || _navigated) return;
-        // Parse new fare from payload (kobo or Naira) with the driver's parser
-        final rawFare = data['newFare'] ??
-            data['estimatedFare'] ??
-            data['fare'] ??
-            data['amount'];
-        double? newFareNgn = FareParser.scalarNgn(rawFare);
-        setState(() {});
-        // Show the fare confirmation dialog
-        _showEarlyDropoffFareConfirmation(newFareNgn, data);
+        _maybeShowEarlyDropoffFare(data);
       });
 
       // 5. Stopover wait timer (backend: arrive -> confirmation_requested -> rider confirm -> timer:start -> timer:completed)
@@ -396,10 +445,22 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           status == 'CANCELLED' ||
           status == 'CANCELED' ||
           status == 'ENDED' ||
-          status == 'PAYMENT_PENDING' ||
-          status == 'EARLY_DROPOFF_CONFIRMED' ||
-          status == 'EARLYDROPOFFCONFIRMED') {
+          status == 'PAYMENT_PENDING') {
         _handleRideTerminated(data ?? {});
+      } else if (status == 'EARLY_DROPOFF_CONFIRMED' ||
+          status == 'EARLYDROPOFFCONFIRMED') {
+        // Confirmed fare: hold the waiting state for the driver's End Trip.
+        _serverSawEarlyDropoff = true;
+        if (!_waitingForDriver && !_terminating && mounted) {
+          final fare = FareParser.finalFareNgn(data ?? {});
+          setState(() {
+            _waitingForDriver = true;
+            _earlyDropoffRequested = true;
+            if (fare != null && fare > 0) _confirmedEarlyFareNgn = fare;
+          });
+          _fareTimer?.cancel();
+        }
+        _updateLiveFare(data);
       } else if (mounted) {
         // Ride-level payloads only carry explicitly threshold-named keys —
         // `waitingTimeSeconds` here is elapsed time, not the free window.
@@ -408,21 +469,40 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           _stops = data?['stops'] ?? data?['stopovers'] ?? _stops;
         });
 
-        if ((status == 'IN_PROGRESS' || status == 'INPROGRESS') && data?['message'] != null) {
-          if (data!['message'].toString().toLowerCase().contains('rejected early drop-off')) {
-            setState(() {
-              _earlyDropoffRequested = false;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(data['message'].toString()),
-                backgroundColor: AppColors.error,
-                duration: const Duration(seconds: 4),
-              ),
+        if (status == 'IN_PROGRESS' || status == 'INPROGRESS') {
+          if (_isEarlyRejectedMessage(data?['message'])) {
+            _resumeOriginalTrip(
+              data?['message']?.toString() ??
+                  'Early drop-off declined — continuing your trip.',
+            );
+          } else if (_serverSawEarlyDropoff &&
+              !_payloadHasEarlyFlags(data ?? {}) &&
+              (_earlyDropoffRequested || _waitingForDriver)) {
+            _resumeOriginalTrip(
+              'Early drop-off ended — continuing to your original destination.',
             );
           }
         }
         _updateLiveFare(data);
+        // Polling fallback: if the fare-recalculation socket was missed, the
+        // status endpoint still carries EARLY_DROPOFF_REQUESTED + the new fare.
+        if (status != null &&
+            status.contains('EARLY') &&
+            status.contains('REQUEST')) {
+          _serverSawEarlyDropoff = true;
+          if (!_earlyDropoffRequested &&
+              !_waitingForDriver &&
+              !_earlyAutoAdopted &&
+              (_suppressAutoAdoptUntil == null ||
+                  DateTime.now().isAfter(_suppressAutoAdoptUntil!))) {
+            // Crash/restart with a live server-side request: adopt it once
+            // so the fare dialog appears without another tap.
+            _earlyAutoAdopted = true;
+            _earlyDropoffRequested = true;
+            if (mounted) setState(() {});
+          }
+          _maybeShowEarlyDropoffFare(data ?? {});
+        }
       }
     } catch (_) {}
   }
@@ -677,50 +757,32 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // Request Early Drop — two-step early drop-off flow
-  // Step 1: POST /rides/{id}/early-dropoff { lat, lng, reason } → driver popup
-  // Step 2: Rider confirms fare → POST /rides/{id}/early-dropoff/confirm
+  // Request Early Drop — ordered single-dialog flow
+  // 1. Tap → POST /rides/{id}/early-dropoff (no pre-dialog; the button shows
+  //    a "Getting updated fare…" state while the backend recalculates).
+  // 2. ONE fare-gated dialog (only once the recalculated fare has arrived via
+  //    REST, socket or polling) → Confirm posts /early-dropoff/confirm and the
+  //    rider waits for the driver to pull over; Cancel posts /reject and the
+  //    trip resumes. The driver is actionable once the rider has confirmed.
   // ─────────────────────────────────────────────────────────────────
-  
+
   Future<void> _requestEarlyDropoff() async {
-    if (widget.rideId == null || _earlyDropoffRequested) return;
-
-    // Step 0 — Confirm / Cancel before anything is sent. On Confirm the rider
-    // POSTs /rides/{id}/early-dropoff; the driver immediately gets a popup
-    // modal, and the recalculated fare comes back over the socket for step 2
-    // (/early-dropoff/confirm).
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Request Early Drop?'),
-        content: const Text(
-          'Your driver will be notified that you want to end the trip at your '
-          'current location. You will see the updated fare before it is charged.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
+    if (widget.rideId == null ||
+        _earlyDropoffRequested ||
+        _waitingForDriver) {
+      return;
+    }
 
     setState(() {
       _earlyDropoffRequested = true;
+      _fareShown = false;
     });
+    _fareTimer?.cancel();
+    _fareTimer = Timer(const Duration(seconds: 25), _onFareTimeout);
 
     try {
       final dropoff = await _currentDropoffPoint();
-      await ApiClient.instance.post(
+      final res = await ApiClient.instance.post(
         ApiConfig.rideEarlyDropoff(widget.rideId!),
         body: {
           'latitude': dropoff.latitude,
@@ -728,33 +790,84 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
           'reason': 'Rider requested early drop-off',
         },
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Early drop-off requested — your driver has been notified.',
-            ),
-            backgroundColor: AppColors.primary,
-          ),
+      if (!mounted) return;
+      // 2xx means the backend recorded the request, even if this payload
+      // carries no fare yet (it arrives via socket/polling next).
+      _serverSawEarlyDropoff = true;
+      if (res != null) {
+        _maybeShowEarlyDropoffFare(
+          res is Map<String, dynamic> ? res : <String, dynamic>{},
         );
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _earlyDropoffRequested = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not request early drop-off: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+      if (!mounted) return;
+      // Re-entering an already-requested flow (e.g. after a restart): the
+      // server holds REQUESTED state, so wait for its fare via polling
+      // instead of erroring out.
+      if (e.toString().toLowerCase().contains('already')) {
+        _serverSawEarlyDropoff = true;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Resuming your early drop-off request…'),
+              backgroundColor: AppColors.primary,
+            ),
+          );
+        }
+        return;
       }
+      _fareTimer?.cancel();
+      setState(() {
+        _earlyDropoffRequested = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not request early drop-off: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  /// No recalculated fare arrived within budget: stand the request down so
+  /// the rider is never stuck on a dead "Getting updated fare…" state.
+  Future<void> _onFareTimeout() async {
+    if (!mounted ||
+        _navigated ||
+        _waitingForDriver ||
+        _fareShown ||
+        !_earlyDropoffRequested) {
       return;
     }
+    try {
+      await ApiClient.instance.post(
+        ApiConfig.rideEarlyDropoffReject(widget.rideId!),
+      );
+    } catch (_) {}
+    _resetEarlyDropoffState();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('No updated fare received — please try again.'),
+        backgroundColor: AppColors.error,
+      ),
+    );
+  }
 
-    // The driver's popup + the updated fare arrive over the socket; the fare
-    // dialog then POSTs /early-dropoff/confirm and finishes the trip.
+  /// Rider backs out while waiting for the driver: withdraw the request so
+  /// both apps return to the IN_PROGRESS status quo.
+  Future<void> _cancelEarlyDropoff() async {
+    if (!_earlyDropoffRequested && !_waitingForDriver) return;
+    _suppressAutoAdoptUntil = DateTime.now().add(const Duration(seconds: 15));
+    try {
+      await ApiClient.instance.post(
+        ApiConfig.rideEarlyDropoffReject(widget.rideId!),
+      );
+    } catch (_) {
+      // Best-effort — the reversal detector below also resumes the trip when
+      // the backend flips the status back to IN_PROGRESS.
+    }
+    _resumeOriginalTrip('Early drop-off cancelled — continuing your trip.');
   }
 
   /// Early drop-off point: the live vehicle position (the rider is in the car),
@@ -851,85 +964,230 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   }
 
 
-  /// Shows the fare confirmation dialog to the rider.
-  /// Called either from the socket listener or from the REST response fallback.
+  /// Single entry-point for the fare confirmation dialog.
+  ///
+  /// The recalculated fare can arrive over three channels — the dedicated
+  /// early-dropoff socket, the generic `ride:state` socket, the POST
+  /// `/early-dropoff` REST response, or the status polling fallback. All of
+  /// them funnel through here so the rider sees exactly one dialog and is
+  /// never stuck on "ENDING TRIP" with no confirmation.
+  /// True when the backend signals the early drop-off request was refused
+  /// (driver tapped Continue Driving / reject, or the rider withdrew it).
+  bool _isEarlyRejectedMessage(dynamic message) {
+    if (message == null) return false;
+    final text = message.toString().toLowerCase();
+    return text.contains('reject') && text.contains('drop') ||
+        text.contains('declin') && text.contains('drop') ||
+        text.contains('rejected early drop-off');
+  }
+
+  /// True when a status payload still carries early drop-off state, so a bare
+  /// IN_PROGRESS can be told apart from a reject-driven reversal.
+  bool _payloadHasEarlyFlags(Map<String, dynamic> data) {
+    final status =
+        (data['status'] ?? data['state'])?.toString().toUpperCase() ?? '';
+    if (status.contains('EARLY')) return true;
+    for (final key in const [
+      'earlyDropoff',
+      'early_dropoff',
+      'earlyDropoffLocation',
+      'earlyDropoffRequested',
+      'earlyDropoffConfirmed',
+    ]) {
+      if (data.containsKey(key)) return true;
+    }
+    return false;
+  }
+
+  /// Back to the IN_PROGRESS status quo on this app: dismisses any fare
+  /// dialog, clears the early drop-off flags and tells the rider the trip
+  /// continues to the original destination.
+  void _resumeOriginalTrip(String message) {
+    if (!mounted || _navigated) return;
+    if (!_earlyDropoffRequested && !_waitingForDriver) return;
+    _dismissFareDialog();
+    _resetEarlyDropoffState();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.primary,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _resetEarlyDropoffState() {
+    _fareTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _earlyDropoffRequested = false;
+      _waitingForDriver = false;
+      _serverSawEarlyDropoff = false;
+      _fareShown = false;
+    });
+  }
+
+  /// Pops the fare dialog from the outside (reject/reversal path). Guarded by
+  /// [_earlyFareDialogOpen] so a settled dialog never pops the trip screen.
+  void _dismissFareDialog() {
+    if (!_earlyFareDialogOpen || !mounted) return;
+    try {
+      Navigator.of(context).pop();
+    } catch (_) {}
+  }
+
+  void _maybeShowEarlyDropoffFare(Map<String, dynamic> data) {
+    if (!mounted ||
+        _navigated ||
+        _terminating ||
+        _waitingForDriver ||
+        _earlyFareDialogOpen ||
+        !_earlyDropoffRequested) {
+      return;
+    }
+    final incomingId = (data['rideId'] ?? data['id'])?.toString();
+    if (incomingId != null && incomingId != widget.rideId) return;
+    final rawFare = data['newFare'] ??
+        data['earlyDropoffFare'] ??
+        data['estimatedFare'] ??
+        data['fare'] ??
+        data['amount'] ??
+        FareParser.finalFareNgn(data);
+    final newFareNgn = FareParser.scalarNgn(rawFare);
+    // Fare-gated: the single confirmation dialog only becomes visible once
+    // the backend's recalculated fare has actually arrived. Bare REQUESTED
+    // acks just keep the "Getting updated fare…" state (bounded by the fare
+    // timer) instead of popping a fare-less dialog.
+    if (newFareNgn == null || newFareNgn <= 0) {
+      _updateLiveFare(data);
+      return;
+    }
+    _fareShown = true;
+    _fareTimer?.cancel();
+    if (mounted) setState(() {});
+    unawaited(_showEarlyDropoffFareConfirmation(newFareNgn, data));
+  }
+
+  /// THE single early drop-off dialog: only shown with the recalculated fare
+  /// in hand. Confirm posts /early-dropoff/confirm and the rider waits for
+  /// the driver to pull over (navigation happens on trip completion, so a
+  /// later reject can still reverse both apps to IN_PROGRESS).
   Future<void> _showEarlyDropoffFareConfirmation(
     double? newFareNgn,
     Map<String, dynamic> payload,
   ) async {
-    if (!mounted || _navigated) return;
+    if (!mounted || _navigated || _earlyFareDialogOpen) return;
+    _earlyFareDialogOpen = true;
 
     final fareStr = newFareNgn != null && newFareNgn > 0
         ? '₦${newFareNgn.toStringAsFixed(0)}'
         : 'Recalculated fare';
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Confirm Updated Fare'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Your driver has been notified. The updated fare for your '
-              'current drop-off point is:',
-            ),
-            const SizedBox(height: 16),
-            Center(
-              child: Text(
-                fareStr,
-                style: const TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.primary,
+    bool? confirmed;
+    try {
+      confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('End Trip Early?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Drop off at your current location for the recalculated fare below. '
+                'Your driver will be asked to pull over safely.',
+              ),
+              const SizedBox(height: 16),
+              Center(
+                child: Text(
+                  fareStr,
+                  style: const TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
+              const SizedBox(height: 12),
+              const Text(
+                'Confirming notifies your driver — they pull over and end the trip.',
+                style: TextStyle(fontSize: 12, color: AppColors.onSurfaceVariant),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Keep Riding'),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Your driver will pull over safely when you confirm.',
-              style: TextStyle(fontSize: 12, color: AppColors.onSurfaceVariant),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Confirm Drop-off'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Confirm Early Drop'),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      _earlyFareDialogOpen = false;
+    }
 
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted || _navigated) {
+      // Explicit "Keep Riding": withdraw the request and resume the original
+      // trip. A null result means the dialog was dismissed externally by a
+      // reject/reversal, which already reset the state — do nothing.
+      if (confirmed == false &&
+          mounted &&
+          !_navigated &&
+          !_waitingForDriver &&
+          _earlyDropoffRequested) {
+        _suppressAutoAdoptUntil =
+            DateTime.now().add(const Duration(seconds: 15));
+        try {
+          await ApiClient.instance.post(
+            ApiConfig.rideEarlyDropoffReject(widget.rideId!),
+          );
+        } catch (_) {}
+        _resetEarlyDropoffState();
+      }
+      return;
+    }
 
-    // Step 2: POST /rides/{id}/early-dropoff/confirm
+    // Rider accepted the recalculated fare: confirm, then wait for the
+    // driver to pull over and end the trip (no navigation yet — a reject
+    // must still be able to reverse both apps to IN_PROGRESS).
     try {
       await ApiClient.instance.post(
         ApiConfig.rideEarlyDropoffConfirm(widget.rideId!),
       );
-    } catch (_) {
-      // Best-effort — driver already notified at step 1
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not confirm early drop-off: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
     }
 
-    // Navigate to summary screen; driver will call /complete to lock billing
-    if (mounted) {
-      _handleRideTerminated(
-        {
-          ...payload,
-          'status': 'EARLY_DROPOFF_CONFIRMED',
-        },
-        isEarlyDropoff: true,
-        newFareNgn: newFareNgn,
-      );
+    if (!mounted || _navigated) return;
+    _serverSawEarlyDropoff = true;
+    if (newFareNgn != null && newFareNgn > 0) {
+      _confirmedEarlyFareNgn = newFareNgn;
+      _liveFareNgn = newFareNgn;
     }
+    setState(() {
+      _waitingForDriver = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Waiting for your driver to pull over…'),
+        backgroundColor: AppColors.primary,
+        duration: Duration(seconds: 3),
+      ),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -938,7 +1196,6 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   Future<void> _handleRideTerminated(
     Map<String, dynamic> data, {
     bool isPaymentPendingEvent = false,
-    bool isEarlyDropoff = false,
     double? newFareNgn,
   }) async {
     if (_terminating || _navigated || !mounted) return;
@@ -977,6 +1234,11 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
         final refreshed = await _fetchFinalFare();
         if (refreshed != null && refreshed > 0) {
           fare = refreshed;
+        } else if (_confirmedEarlyFareNgn != null &&
+            _confirmedEarlyFareNgn! > 0) {
+          // The recalculated fare the rider agreed to — the checkout figure
+          // when the completion payload carries no settled amount.
+          fare = _confirmedEarlyFareNgn!;
         } else if (_liveFareNgn != null && _liveFareNgn! > 0) {
           fare = _liveFareNgn!;
         }
@@ -1086,6 +1348,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _fareTimer?.cancel();
     _statusSub?.cancel();
     _paymentPendingSub?.cancel();
     _locationSub?.cancel();
@@ -1094,6 +1357,56 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
     _fareUpdatedSub?.cancel();
     _stopoverUiTimer?.cancel();
     super.dispose();
+  }
+
+  /// Bottom-sheet early drop-off button across the three flow states: idle →
+  /// request, awaiting fare → disabled spinner, driver-wait → cancel request.
+  Widget _buildEarlyDropoffButton() {
+    if (_waitingForDriver) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _cancelEarlyDropoff,
+          icon: const Icon(Icons.close, size: 18),
+          label: const Text('Cancel Early Drop Request'),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            side: const BorderSide(color: AppColors.error),
+            foregroundColor: AppColors.error,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      );
+    }
+    final awaitingFare = _earlyDropoffRequested && !_fareShown;
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: _earlyDropoffRequested ? null : _requestEarlyDropoff,
+        icon: awaitingFare
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.flag_outlined, size: 18),
+        label: Text(
+          awaitingFare ? 'Getting Updated Fare…' : 'Request Early Drop',
+        ),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.error,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -1292,17 +1605,19 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: _earlyDropoffRequested
+                                color: _earlyDropoffActive
                                     ? AppColors.error.withValues(alpha: 0.12)
                                     : AppColors.primaryContainer,
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                _earlyDropoffRequested
-                                    ? 'ENDING TRIP'
-                                    : 'EN ROUTE',
+                                _waitingForDriver
+                                    ? 'WAITING FOR DRIVER'
+                                    : _earlyDropoffRequested
+                                        ? 'ENDING TRIP'
+                                        : 'EN ROUTE',
                                 style: TextStyle(
-                                  color: _earlyDropoffRequested
+                                  color: _earlyDropoffActive
                                       ? AppColors.error
                                       : AppColors.onPrimaryContainer,
                                   fontWeight: FontWeight.w700,
@@ -1621,34 +1936,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
                           top: false,
                           child: Column(
                             children: [
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton.icon(
-                                  onPressed: _earlyDropoffRequested ? null : _requestEarlyDropoff,
-                                  icon: _earlyDropoffRequested
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : const Icon(Icons.flag_outlined, size: 18),
-                                  label: Text(
-                                    _earlyDropoffRequested
-                                        ? 'Drop Requested'
-                                        : 'Request Early Drop',
-                                  ),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: AppColors.error,
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                              _buildEarlyDropoffButton(),
                               const SizedBox(height: 12),
                               Row(
                                 children: [

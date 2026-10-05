@@ -11,8 +11,10 @@ import '../../../../core/utils/fare_parser.dart';
 import '../../../home/presentation/screens/home_screen.dart';
 import '../../../payments/presentation/screens/wallet_dashboard_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
+import '../../../ride/presentation/screens/driver_assigned_screen.dart';
 import '../../../ride/presentation/screens/ride_history_screen.dart';
 import '../../../ride/presentation/screens/ride_in_progress_screen.dart';
+import '../../../ride/presentation/screens/searching_for_driver_screen.dart';
 import '../../../ride/presentation/widgets/ride_payment_sheet.dart';
 import '../widgets/rider_bottom_nav.dart';
 import '../widgets/rider_drawer.dart';
@@ -84,19 +86,50 @@ class _RiderHomeShellState extends State<RiderHomeShell>
       // second copy of a screen the rider already has open.
       if (!_recoveredKeys.add('$rideId:$rawStatus')) return;
 
-      // A confirmed early drop-off is terminal for the rider: the fare is
-      // locked and the trip only needs paying. A pending request is still a
-      // live trip (the rider must confirm the recalculated fare first).
-      final isEarlyConfirmed =
-          rawStatus.contains('EARLY') && rawStatus.contains('CONFIRM');
-      if (rawStatus.contains('PAYMENT') || isEarlyConfirmed) {
+      // Route a restarted/interrupted ride back to the screen matching its
+      // server status — a crash mid-search must not reopen the trip map, and
+      // a crash before pickup must not skip the driver-assigned screen.
+      if (rawStatus.contains('PAYMENT')) {
         await _recoverPayment(data, rideId);
+      } else if (_isAssignedStatus(rawStatus)) {
+        await _recoverAssigned(data, rideId);
+      } else if (_isSearchingStatus(rawStatus)) {
+        await _recoverSearching(data, rideId);
       } else {
-        await _recoverTrip(data, rideId);
+        // IN_PROGRESS, STARTED and every EARLY_* state resume the trip
+        // screen. A CONFIRMED early drop-off reopens directly in the
+        // "waiting for driver" state (fare already agreed pre-restart); the
+        // live poll re-asserts it from the server either way.
+        final isEarlyConfirmed =
+            rawStatus.contains('EARLY') && rawStatus.contains('CONFIRM');
+        await _recoverTrip(data, rideId,
+            initialWaitingForDriver: isEarlyConfirmed);
       }
     } catch (_) {
       // Best-effort: never block startup or tab rendering on this.
     }
+  }
+
+  /// Driver matched but trip not started (ACCEPTED / MATCHED / ARRIVED).
+  /// Checked before [_isSearchingStatus]: ARRIVED contains neither, but
+  /// explicit ordering keeps EARLY_* (handled by the caller) out.
+  bool _isAssignedStatus(String rawStatus) {
+    return rawStatus == 'ACCEPTED' ||
+        rawStatus.contains('MATCHED') ||
+        rawStatus == 'ARRIVED' ||
+        rawStatus.contains('DRIVER_ASSIGNED') ||
+        rawStatus.contains('DRIVERARRIVED');
+  }
+
+  /// No driver yet: the search screen owns this phase (socket + countdown +
+  /// cancel). EARLY_DROPOFF_REQUESTED also contains 'REQUESTED', so callers
+  /// must route EARLY_* to the trip screen before consulting this.
+  bool _isSearchingStatus(String rawStatus) {
+    if (rawStatus.contains('EARLY')) return false;
+    return rawStatus == 'REQUESTED' ||
+        (rawStatus.contains('PENDING') && !rawStatus.contains('PAYMENT')) ||
+        rawStatus == 'SEARCHING' ||
+        rawStatus.contains('RIDE_REQUEST');
   }
 
   /// The ride finished but the money didn't — bring the payment sheet back.
@@ -124,8 +157,78 @@ class _RiderHomeShellState extends State<RiderHomeShell>
     );
   }
 
+  /// The search was interrupted (restart / crash) — put the rider back on
+  /// the searching screen, which owns the match socket, countdown and cancel.
+  Future<void> _recoverSearching(Map<String, dynamic> data, String rideId) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SearchingForDriverScreen(
+          rideId: rideId,
+          fareNgn: FareParser.finalFareNgn(data),
+          paymentMethod: data['paymentMethod']?.toString(),
+          pickupLatLng: _latLngOf(data['pickup']),
+          destinationLatLng: _latLngOf(data['dropoff']),
+          pickupLabel:
+              _addressOf(data['pickup']) ?? data['pickupAddress']?.toString(),
+          destinationLabel:
+              _addressOf(data['dropoff']) ?? data['dropoffAddress']?.toString(),
+        ),
+      ),
+    );
+  }
+
+  /// A driver was matched but the trip hadn't started — reopen the assigned
+  /// screen so the rider keeps live driver tracking up to pickup.
+  Future<void> _recoverAssigned(Map<String, dynamic> data, String rideId) async {
+    final driver = data['driver'] is Map ? data['driver'] as Map : const {};
+    final vehicle = driver['vehicle'] is Map ? driver['vehicle'] as Map : null;
+    final vehicleModel = vehicle != null
+        ? [
+            vehicle['color']?.toString(),
+            vehicle['make']?.toString(),
+            vehicle['model']?.toString(),
+          ].where((s) => s != null && s.trim().isNotEmpty).join(' ')
+        : (driver['vehicleModel'] ?? data['vehicleModel'])?.toString();
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DriverAssignedScreen(
+          rideId: rideId,
+          driverName: (driver['name'] ?? data['driverName'])?.toString(),
+          driverPhone: (driver['phone'] ??
+                  driver['phoneNumber'] ??
+                  data['driverPhone'])
+              ?.toString(),
+          driverRating: (driver['rating'] ?? data['driverRating']) is num
+              ? (driver['rating'] ?? data['driverRating']).toDouble()
+              : null,
+          vehicleModel: vehicleModel,
+          plateNumber: (vehicle?['plateNumber'] ?? data['plateNumber'])
+              ?.toString(),
+          driverProfileImage:
+              (driver['profileImage'] ?? data['driverProfileImage'])
+                  ?.toString(),
+          etaMinutes: (data['etaMinutes'] ?? driver['etaMinutes']) is num
+              ? (data['etaMinutes'] ?? driver['etaMinutes']).toInt()
+              : null,
+          fareNgn: FareParser.finalFareNgn(data),
+          paymentMethod: data['paymentMethod']?.toString(),
+          pickupLatLng: _latLngOf(data['pickup']),
+          destinationLatLng: _latLngOf(data['dropoff']),
+          pickupLabel:
+              _addressOf(data['pickup']) ?? data['pickupAddress']?.toString(),
+          destinationLabel:
+              _addressOf(data['dropoff']) ?? data['dropoffAddress']?.toString(),
+        ),
+      ),
+    );
+  }
+
   /// The trip was interrupted (restart / crash) — put the rider back on it.
-  Future<void> _recoverTrip(Map<String, dynamic> data, String rideId) async {
+  Future<void> _recoverTrip(
+    Map<String, dynamic> data,
+    String rideId, {
+    bool initialWaitingForDriver = false,
+  }) async {
     final driver = data['driver'] is Map ? data['driver'] as Map : const {};
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -152,6 +255,7 @@ class _RiderHomeShellState extends State<RiderHomeShell>
           driverRating: (driver['rating'] ?? data['driverRating']) is num
               ? (driver['rating'] ?? data['driverRating']).toDouble()
               : null,
+          initialWaitingForDriver: initialWaitingForDriver,
         ),
       ),
     );

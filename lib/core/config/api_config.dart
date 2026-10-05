@@ -86,6 +86,12 @@ abstract final class ApiConfig {
   static String rideEarlyDropoffConfirm(String rideId) =>
       '$apiV1/rides/$rideId/early-dropoff/confirm';
 
+  /// Withdraw (rider cancels own request) or driver declines: POST
+  /// /rides/{id}/early-dropoff/reject → status back to IN_PROGRESS and both
+  /// apps resume the original trip.
+  static String rideEarlyDropoffReject(String rideId) =>
+      '$apiV1/rides/$rideId/early-dropoff/reject';
+
   /// Rider adds a mid-trip stop: POST /rides/{id}/stops { location: { lat, lng, address } }
   /// Driver is notified via WebSocket (ride:stopover:requested).
   static String rideAddStop(String rideId) => '$apiV1/rides/$rideId/stops';
