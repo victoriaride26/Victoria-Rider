@@ -257,6 +257,81 @@ void main() {
     });
   });
 
+  group('BenueGazetteer reverse (nearest)', () {
+    test('fix on top of an entry returns its own name', () {
+      final result = _gazetteer().reverse(LatLng(7.7237, 8.5601));
+      expect(result, isNotNull);
+      expect(result!.shortName, 'Judges Quarters');
+      // The GPS fix itself is kept so the ride starts at the real position.
+      expect(result.location.latitude, closeTo(7.7237, 1e-9));
+    });
+
+    test('fix a few streets away returns a Near label', () {
+      // ~555 m north of Judges Quarters — inside the near radius.
+      final result = _gazetteer().reverse(LatLng(7.7287, 8.5601));
+      expect(result, isNotNull);
+      expect(result!.shortName, 'Near Judges Quarters');
+      expect(result.placeName, contains('Near Judges Quarters'));
+    });
+
+    test('fix far from every entry returns null for provider fallback', () {
+      expect(_gazetteer().reverse(LatLng(9.0, 9.0)), isNull);
+    });
+
+    test('nearest reports the closest entry and its distance', () {
+      final hit = _gazetteer().nearest(LatLng(7.74, 8.517));
+      expect(hit, isNotNull);
+      expect(hit!.entry.name, 'High Level');
+      expect(hit.distanceMeters, closeTo(0, 1.0));
+    });
+  });
+
+  group('PlaceSearchService reverseGeocode local-first', () {
+    test('gazetteer hit answers without any network call', () async {
+      final hits = <String>[];
+      final service = PlaceSearchService(
+        mapbox: MapboxGeocodingService(
+          client: _client('mapbox', {}, hits: hits),
+        ),
+        geoapify: GeoapifyGeocodingService(
+          client: _client('geoapify', {}, hits: hits),
+        ),
+        loadGazetteer: () async => _gazetteer(),
+      );
+      final result = await service.reverseGeocode(LatLng(7.7237, 8.5601));
+      expect(result, isNotNull);
+      expect(result!.shortName, 'Judges Quarters');
+      expect(hits, isEmpty,
+          reason: 'gazetteer reverse hit must skip the providers');
+    });
+
+    test('gazetteer miss still falls back to the providers', () async {
+      final hits = <String>[];
+      final service = PlaceSearchService(
+        mapbox: MapboxGeocodingService(
+          client: _client('mapbox', {}, hits: hits),
+        ),
+        geoapify: GeoapifyGeocodingService(
+          client: _client('geoapify', {
+            'api.geoapify.com': jsonEncode({
+              'results': [
+                {
+                  'formatted': 'Remote Place, Nigeria',
+                  'lat': 9.0,
+                  'lon': 9.0,
+                },
+              ],
+            }),
+          }, hits: hits),
+        ),
+        loadGazetteer: () async => _gazetteer(),
+      );
+      final result = await service.reverseGeocode(LatLng(9.0, 9.0));
+      expect(result, isNotNull);
+      expect(result!.placeName, contains('Remote Place'));
+    });
+  });
+
   group('gazetteer asset contract', () {
     test('asset JSON has the schema the Dart loader expects', () async {
       final raw = await rootBundle.loadString(BenueGazetteer.assetPath);

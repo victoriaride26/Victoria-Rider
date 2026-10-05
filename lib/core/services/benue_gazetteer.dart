@@ -168,6 +168,67 @@ class BenueGazetteer {
   /// Returned by [bestScore] when no entry matches at all.
   static const int noMatchScore = 99;
 
+  /// Within this distance the GPS fix is treated as *being at* the place —
+  /// the entry's own name is returned verbatim.
+  static const double exactMatchRadiusM = 250;
+
+  /// Up to this distance the fix is labelled `Near <name>` so the dashboard
+  /// pickup pill still shows somewhere meaningful instead of raw coordinates.
+  /// Beyond it, reverse geocoding falls through to the online providers.
+  static const double nearMatchRadiusM = 1000;
+
+  /// Closest gazetteer entry to [point], or `null` when the gazetteer is
+  /// empty. A linear scan over ~2k entries is a few milliseconds — no index
+  /// needed.
+  NearestEntry? nearest(LatLng point) {
+    if (entries.isEmpty) return null;
+    const distance = Distance();
+    GazetteerEntry? best;
+    var bestMeters = double.infinity;
+    for (final entry in entries) {
+      final meters = distance(point, LatLng(entry.lat, entry.lng));
+      if (meters < bestMeters) {
+        bestMeters = meters;
+        best = entry;
+      }
+    }
+    if (best == null) return null;
+    return NearestEntry(entry: best, distanceMeters: bestMeters);
+  }
+
+  /// Local-first reverse geocode for a GPS fix.
+  ///
+  ///  * ≤ [exactMatchRadiusM] → the entry's own label (e.g. `High Level,
+  ///    Makurdi, Benue, Nigeria`).
+  ///  * ≤ [nearMatchRadiusM] → `Near <name>, <locality>, Benue, Nigeria` so
+  ///    the pickup pill is still human-meaningful a few streets away.
+  ///  * farther → `null`, letting the caller try Mapbox/Geoapify.
+  GeocodingResult? reverse(
+    LatLng point, {
+    double exactRadiusM = exactMatchRadiusM,
+    double nearRadiusM = nearMatchRadiusM,
+  }) {
+    final hit = nearest(point);
+    if (hit == null || hit.distanceMeters > nearRadiusM) return null;
+    if (hit.distanceMeters <= exactRadiusM) {
+      final entry = hit.entry;
+      return GeocodingResult(
+        placeName: entry.placeName,
+        shortName: entry.name,
+        location: point,
+      );
+    }
+    final entry = hit.entry;
+    final placeName = entry.locality.isEmpty
+        ? 'Near ${entry.name}, Benue, Nigeria'
+        : 'Near ${entry.name}, ${entry.locality}, Benue, Nigeria';
+    return GeocodingResult(
+      placeName: placeName,
+      shortName: 'Near ${entry.name}',
+      location: point,
+    );
+  }
+
   static String _normalize(String value) =>
       value.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '');
 }
@@ -178,4 +239,12 @@ class _Scored {
   final int score;
   final double distance;
   final GeocodingResult result;
+}
+
+/// Closest gazetteer entry to a GPS fix, with its distance in metres.
+class NearestEntry {
+  const NearestEntry({required this.entry, required this.distanceMeters});
+
+  final GazetteerEntry entry;
+  final double distanceMeters;
 }

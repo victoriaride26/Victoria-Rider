@@ -80,8 +80,18 @@ class PlaceSearchService {
     return _merge(local, remote, proximity: proximity, limit: limit);
   }
 
-  /// Reverse geocode: Mapbox first, Geoapify as fallback, else `null`.
+  /// Reverse geocode, local-first: the bundled Benue gazetteer answers
+  /// instantly and offline for fixes near a known place (exact name within
+  /// [BenueGazetteer.exactMatchRadiusM], `Near <name>` within
+  /// [BenueGazetteer.nearMatchRadiusM]); Mapbox then Geoapify cover the rest.
   Future<GeocodingResult?> reverseGeocode(LatLng point) async {
+    try {
+      final gazetteer = await _loadGazetteer();
+      final local = gazetteer.reverse(point);
+      if (local != null) return local;
+    } catch (_) {
+      // a broken gazetteer must never break reverse geocoding
+    }
     try {
       final result = await _mapbox.reverseGeocode(point);
       if (result != null) return result;

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/models/saved_place.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/services/benue_gazetteer.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/places_storage_service.dart';
 import '../../../../core/services/session_controller.dart';
@@ -46,10 +49,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   List<SavedPlace> _savedPlaces = [];
 
+  /// Guards overlapping pickup-fix requests (initial load + pill tap +
+  /// pull-to-refresh): only the latest generation may write state.
+  int _locationGeneration = 0;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Warm the bundled gazetteer cache so the first pickup label resolves
+    // instantly and offline instead of paying the asset parse on the GPS path.
+    unawaited(BenueGazetteer.load());
     _loadDashboardData();
     _loadCurrentLocation();
     _loadSavedPlaces();
@@ -76,21 +86,58 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _loadCurrentLocation() async {
+  /// Two-stage pickup fix for the dashboard:
+  ///
+  ///  1. Instant — OS last-known position labelled offline from the bundled
+  ///     Benue gazetteer, so the pill shows a real Makurdi name on first
+  ///     frame instead of a spinner.
+  ///  2. Refine — fresh high-accuracy GPS fix, labelled local-first
+  ///     (gazetteer → Mapbox → Geoapify → coordinates), replacing the instant
+  ///     label when it lands.
+  ///
+  /// The old 2 s timeout fired before a cold GPS fix ever arrived, leaving the
+  /// pill on its fallback text until the rider manually retried.
+  Future<void> _loadCurrentLocation({bool refresh = false}) async {
     if (!mounted) return;
-    setState(() => _locationLoading = true);
+    final generation = ++_locationGeneration;
+    bool stillCurrent() => mounted && generation == _locationGeneration;
+
+    if (!refresh) {
+      // Stage 1 — instant last-known fix (no GPS wait, no permission prompt).
+      // Capped: on some devices / in widget tests the OS call can hang, and
+      // the pill must never stay a spinner forever.
+      try {
+        final instant = await _locationService
+            .getLastKnownLocation()
+            .timeout(const Duration(seconds: 5), onTimeout: () => null);
+        if (instant != null && stillCurrent()) {
+          setState(() {
+            _currentLocation = instant;
+            _locationLoading = false;
+          });
+        } else if (stillCurrent()) {
+          setState(() => _locationLoading = true);
+        }
+      } catch (_) {
+        if (stillCurrent()) setState(() => _locationLoading = true);
+      }
+    } else {
+      if (stillCurrent()) setState(() => _locationLoading = true);
+    }
+
+    // Stage 2 — fresh GPS fix with a budget that actually covers a cold start
+    // (15 s GPS) plus provider fallbacks on a gazetteer miss.
     try {
       final loc = await _locationService
           .getCurrentLocation()
-          .timeout(const Duration(seconds: 2), onTimeout: () => null);
-      if (mounted) {
-        setState(() {
-          _currentLocation = loc;
-          _locationLoading = false;
-        });
-      }
+          .timeout(const Duration(seconds: 30), onTimeout: () => null);
+      if (!stillCurrent()) return;
+      setState(() {
+        if (loc != null) _currentLocation = loc;
+        _locationLoading = false;
+      });
     } catch (_) {
-      if (mounted) setState(() => _locationLoading = false);
+      if (stillCurrent()) setState(() => _locationLoading = false);
     }
   }
 
@@ -153,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onRefresh: () async {
             await Future.wait([
               _loadDashboardData(),
-              _loadCurrentLocation(),
+              _loadCurrentLocation(refresh: true),
             ]);
           },
           child: ListView(
@@ -199,7 +246,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(20),
                       onTap: () async {
-                        await _loadCurrentLocation();
+                        await _loadCurrentLocation(refresh: true);
                         if (!context.mounted) return;
                         if (_currentLocation != null) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -409,7 +456,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                         onTap: () async {
                           if (_currentLocation == null) {
-                            await _loadCurrentLocation();
+                            await _loadCurrentLocation(refresh: true);
                             if (_currentLocation != null) return;
                           }
                           if (!context.mounted) return;

@@ -1,6 +1,7 @@
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'benue_gazetteer.dart';
 import 'geoapify_geocoding_service.dart';
 import 'mapbox_geocoding_service.dart';
 
@@ -73,6 +74,62 @@ class LocationService {
     }
   }
 
+  /// Fast, offline-friendly label for a GPS fix: bundled Benue gazetteer
+  /// first (instant, covers the Makurdi names Mapbox/Geoapify miss), then the
+  /// online providers, then a coordinate fallback. Never returns `null` for a
+  /// valid fix — the dashboard pickup pill always has something to show.
+  Future<CurrentLocation> labelPosition(LatLng latLng) async {
+    try {
+      final gazetteer = await BenueGazetteer.load();
+      final local = gazetteer.reverse(latLng);
+      if (local != null) {
+        return CurrentLocation(
+          position: latLng,
+          label: local.placeName,
+          shortLabel: local.shortName,
+        );
+      }
+    } catch (_) {}
+    try {
+      var result = await _geocoding.reverseGeocode(latLng);
+      result ??= await _geoapify.reverseGeocode(latLng);
+      if (result != null) {
+        return CurrentLocation(
+          position: latLng,
+          label: result.placeName,
+          shortLabel: result.shortName,
+        );
+      }
+    } catch (_) {}
+    final coordLabel =
+        '${latLng.latitude.toStringAsFixed(4)}, ${latLng.longitude.toStringAsFixed(4)}';
+    return CurrentLocation(
+      position: latLng,
+      label: coordLabel,
+      shortLabel: coordLabel,
+    );
+  }
+
+  /// Instant pickup fix from the OS last-known position — no GPS wait, no
+  /// permission prompt, gazetteer-labelled offline.
+  ///
+  /// Returns `null` when no last-known fix exists (fresh install / GPS never
+  /// used). The dashboard shows this immediately, then refines it with
+  /// [getCurrentLocation] in the background.
+  Future<CurrentLocation?> getLastKnownLocation() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
+      if (await Geolocator.checkPermission() == LocationPermission.deniedForever) {
+        return null;
+      }
+      final position = await Geolocator.getLastKnownPosition();
+      if (position == null) return null;
+      return await labelPosition(LatLng(position.latitude, position.longitude));
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Returns the rider's current location with an address label.
   ///
   /// Returns `null` if permissions are denied or GPS is disabled.
@@ -100,27 +157,9 @@ class LocationService {
 
       final latLng = LatLng(position.latitude, position.longitude);
 
-      // 4. Reverse-geocode to a human-readable address: Mapbox first, then
-      // Geoapify, so a Mapbox miss (thin coverage in Benue) still resolves.
-      var result = await _geocoding.reverseGeocode(latLng);
-      result ??= await _geoapify.reverseGeocode(latLng);
-
-      if (result != null) {
-        return CurrentLocation(
-          position: latLng,
-          label: result.placeName,
-          shortLabel: result.shortName,
-        );
-      }
-
-      // Fallback: show coordinates when geocoding fails.
-      final coordLabel =
-          '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
-      return CurrentLocation(
-        position: latLng,
-        label: coordLabel,
-        shortLabel: coordLabel,
-      );
+      // 4. Local-first label: bundled gazetteer (instant, Makurdi-aware),
+      // then Mapbox, then Geoapify, then coordinates — never null for a fix.
+      return await labelPosition(latLng);
     } catch (_) {
       return null;
     }
