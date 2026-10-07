@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import 'login_screen.dart';
 import 'phone_login_screen.dart';
@@ -39,7 +40,7 @@ class GetStartedScreen extends StatelessWidget {
                     color: AppColors.onPrimaryContainer, size: 36),
               ),
               const SizedBox(height: 24),
-              Text('Welcome to Victoria', style: theme.textTheme.headlineLarge),
+              Text(AppConstants.welcomeTitle, style: theme.textTheme.headlineLarge),
               const SizedBox(height: 8),
               Text(
                 'Your premium urban commute, redefined with precision.',

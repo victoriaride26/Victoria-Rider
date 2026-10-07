@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart' as perm;
 
 import '../config/api_config.dart';
+import '../constants/app_constants.dart';
 import '../network/api_client.dart';
 
 /// Background GPS tracking — keeps sending driver position even when the app
@@ -111,7 +112,7 @@ class BackgroundLocationService {
           distanceFilter: 5,
           intervalDuration: const Duration(seconds: 5),
           foregroundNotificationConfig: const ForegroundNotificationConfig(
-            notificationTitle: 'Victoria Rides — Tracking your location',
+            notificationTitle: AppConstants.trackingNotificationTitle,
             notificationText: 'Sharing live location so riders can find you',
             enableWakeLock: true,
           ),

@@ -50,7 +50,7 @@ class _SplashScreenState extends State<SplashScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              AppConstants.appName,
+              AppConstants.appFullName,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     color: AppColors.onPrimary,
                     fontWeight: FontWeight.w700,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/data/auth_repository.dart';
@@ -49,7 +50,7 @@ class RiderDrawer extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Log Out'),
         content: const Text(
-          'Are you sure you want to log out of your Victoria Rides account?',
+          AppConstants.logoutConfirmMessage,
         ),
         actions: [
           TextButton(
@@ -352,7 +353,7 @@ class RiderDrawer extends StatelessWidget {
                     onTap: () => _showInfoDialog(
                       context,
                       'Victoria Shield Safety',
-                      'Victoria Rides ensures every trip is monitored with 24/7 safety assistance, emergency SOS contact sharing, and thoroughly vetted drivers.',
+                      AppConstants.safetyDescription,
                     ),
                   ),
                   const Padding(
@@ -406,7 +407,7 @@ class RiderDrawer extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Victoria Rides • v1.0.0',
+                    AppConstants.versionFooter,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: AppColors.onSurfaceVariant.withValues(alpha: 0.7),
                     ),

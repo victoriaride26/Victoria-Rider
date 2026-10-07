@@ -13,6 +13,6 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome to Victoria'), findsOneWidget);
+    expect(find.text('Welcome to Victoria Rides'), findsOneWidget);
   });
 }

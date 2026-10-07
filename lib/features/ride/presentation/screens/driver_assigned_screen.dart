@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/config/mapbox_config.dart';
 import '../../../../core/network/api_client.dart';
@@ -182,7 +183,7 @@ class _DriverAssignedScreenState extends State<DriverAssignedScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              '🚗 Your Victoria driver has arrived at the pickup point!',
+              AppConstants.driverArrivedMessage,
             ),
             backgroundColor: AppColors.primary,
             behavior: SnackBarBehavior.floating,

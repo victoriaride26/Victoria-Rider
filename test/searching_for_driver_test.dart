@@ -26,7 +26,7 @@ void main() {
 
     // Verify key elements render
     expect(find.text('Searching for Driver'), findsOneWidget);
-    expect(find.text('Finding your Victoria driver nearby...'), findsOneWidget);
+    expect(find.text('Finding your Victoria Rides driver nearby...'), findsOneWidget);
     expect(find.text('Cancel Request'), findsOneWidget);
 
     // No exceptions or overflow should have been thrown

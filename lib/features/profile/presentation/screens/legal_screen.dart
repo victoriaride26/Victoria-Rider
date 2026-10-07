@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../rider/presentation/widgets/rider_scaffold.dart';
@@ -31,7 +32,7 @@ class LegalScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   _LegalTile(icon: Icons.privacy_tip_outlined, title: 'Privacy Policy', subtitle: 'How we collect and protect your data', onTap: () => _open(context, 'Privacy Policy')),
-                  _LegalTile(icon: Icons.description_outlined, title: 'Terms & Conditions', subtitle: 'Your agreement to use Victoria Rides', onTap: () => _open(context, 'Terms & Conditions')),
+                  _LegalTile(icon: Icons.description_outlined, title: 'Terms & Conditions', subtitle: AppConstants.termsSubtitle, onTap: () => _open(context, 'Terms & Conditions')),
                   _LegalTile(icon: Icons.receipt_long_outlined, title: 'Rider Terms', subtitle: 'Rights and responsibilities as a rider', onTap: () => _open(context, 'Rider Terms')),
                   _LegalTile(icon: Icons.security_outlined, title: 'Safety & Community Guidelines', subtitle: 'Safe and respectful rides', onTap: () => _open(context, 'Community Guidelines')),
                   _LegalTile(icon: Icons.cookie_outlined, title: 'Cookie Policy', onTap: () => _open(context, 'Cookie Policy')),
@@ -73,7 +74,7 @@ class _LegalDetail extends StatelessWidget {
                   const SizedBox(height: 12),
                   Text(title, style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
-                  Text('This content will be supplied by the Victoria Rides legal team. The structure is ready to display the final documents required for a ride-hailing app.', style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.onSurfaceVariant, height: 1.5)),
+                  Text(AppConstants.legalPlaceholder, style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.onSurfaceVariant, height: 1.5)),
                   const SizedBox(height: 16),
                   Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.surfaceContainerLow, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.outlineVariant)), child: Text('Placeholder • Final legal copy will replace this.', style: theme.textTheme.bodySmall?.copyWith(color: AppColors.onSurfaceVariant))),
                 ]),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../rider/presentation/widgets/rider_scaffold.dart';
@@ -92,7 +93,7 @@ class SettingsScreen extends StatelessWidget {
                         context: context,
                         builder: (ctx) => AlertDialog(
                           title: const Text('Delete Account?'),
-                          content: const Text('This will permanently delete your Victoria Rides account and all associated data. This action cannot be undone.'),
+                          content: const Text(AppConstants.deleteAccountMessage),
                           actions: [
                             TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
                             FilledButton(
@@ -126,7 +127,7 @@ class SettingsScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Victoria Rides • v1.0.0', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                        Text(AppConstants.versionFooter, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
                         const SizedBox(height: 4),
                         Text('Made with care in Makurdi, Benue State', style: theme.textTheme.bodySmall?.copyWith(color: AppColors.onSurfaceVariant)),
                       ],

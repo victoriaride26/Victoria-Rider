@@ -63,7 +63,7 @@ class VTRidesApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: AppConstants.appName,
+      title: AppConstants.appFullName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       // Uniform text scale for every screen, composed with the OS

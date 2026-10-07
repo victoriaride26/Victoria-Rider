@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/config/api_config.dart';
 import '../../../core/models/geocoding_result.dart';
 import '../../../core/network/api_client.dart';
@@ -193,9 +194,9 @@ class RideRequestService {
       }
     }
 
-    // Must be obtained from VT Rides, otherwise ABORT
+    // Must be obtained from the app backend, otherwise ABORT
     throw Exception(
-      'Estimated fare could not be obtained from VT Rides. Ride request aborted.',
+      AppConstants.fareEstimateMissingRequestAborted,
     );
   }
 
@@ -286,7 +287,7 @@ class RideRequestService {
   }) async {
     if (estimate.fareNgn <= 0) {
       throw Exception(
-        'Cannot request ride: Estimated fare must be obtained from VT Rides, otherwise ABORT.',
+        AppConstants.fareEstimateMissingAbort,
       );
     }
 

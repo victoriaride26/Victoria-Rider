@@ -4,11 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-/// System tray notification service.
+import '../constants/app_constants.dart';
+
+/// System tray notification service (Rider app).
 ///
 /// When `POST_NOTIFICATIONS` (Android 13+) / notification permission is
 /// granted, app notifications are also posted to the OS alerts tray so the
-/// driver sees ride requests, KYC updates etc. even outside the app.
+/// rider sees trip updates, payment confirmations etc. even outside the app.
 ///
 /// Gracefully degrades in tests / when plugin not available.
 class NotificationTrayService {
@@ -26,8 +28,8 @@ class NotificationTrayService {
   bool get isInitialized => _initialized;
 
   static const _channelId = 'victoria_rides_driver';
-  static const _channelName = 'Victoria Rides Driver';
-  static const _channelDesc = 'Ride requests, payouts and KYC updates';
+  static const _channelName = AppConstants.trayChannelName;
+  static const _channelDesc = AppConstants.trayChannelDesc;
 
   /// Initializes the plugin and checks/requests notification permission.
   ///
@@ -195,7 +197,7 @@ class NotificationTrayService {
     }
   }
 
-  /// Convenience helpers for common driver events.
+  /// Convenience helpers for common rider events.
   Future<void> showRideRequest({
     required String riderName,
     String? pickup,

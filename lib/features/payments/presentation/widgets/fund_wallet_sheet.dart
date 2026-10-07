@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_primary_button.dart';
@@ -779,8 +780,8 @@ class _FundWalletSheetState extends State<FundWalletSheet>
         const SizedBox(height: 8),
         Text(
           creditedText != null
-              ? '$creditedText has been credited to your Victoria Rides wallet.'
-              : 'Your Victoria Rides wallet has been funded.',
+              ? AppConstants.walletCredited(creditedText)
+              : AppConstants.walletFunded,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: AppColors.onSurfaceVariant,
             fontSize: 15,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_theme.dart';
 
@@ -123,10 +124,10 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen>
         : 'Allow Location Access';
 
     final body = isServiceOff
-        ? "Your device's location services are switched off.\n\nVT Rides needs GPS to show your position on the map, find nearby drivers, and give you accurate pickup coordinates."
+        ? AppConstants.locationServiceOffBody
         : isForever
-            ? "Location access was permanently denied.\n\nPlease open App Settings, go to Permissions, and allow Location so VT Rides can find you on the map."
-            : "VT Rides needs your location to:\n\n\u2022 Show you on the map so drivers can find you\n\u2022 Give accurate pickup coordinates\n\u2022 Provide real distance and fare estimates\n\nYour location is only used while the app is open.";
+            ? AppConstants.locationDeniedForeverBody
+            : AppConstants.locationRationaleBody;
 
     final primaryLabel = isServiceOff
         ? 'Open Location Settings'

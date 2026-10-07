@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
+import '../constants/app_constants.dart';
 import '../../features/notifications/data/notification_service.dart';
 import 'notification_tray_service.dart';
 import 'session_controller.dart';
@@ -78,7 +79,7 @@ class FcmService {
       // Foreground message listener — curate to RiderNotificationService + tray
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         debugPrint('[FCM] Foreground notification: ${message.notification?.title}');
-        final title = message.notification?.title ?? message.data['title']?.toString() ?? 'Victoria Rides';
+        final title = message.notification?.title ?? message.data['title']?.toString() ?? AppConstants.pushFallbackTitle;
         final body = message.notification?.body ?? message.data['body']?.toString() ?? message.data['message']?.toString() ?? '';
         // Curate to SharedPreferences-backed service so Notifications screen shows history
         final typeStr = (message.data['type']?.toString() ?? '').toLowerCase();
@@ -110,7 +111,7 @@ class FcmService {
 
       // Background tap — also curate
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        final title = message.notification?.title ?? message.data['title']?.toString() ?? 'Victoria Rides';
+        final title = message.notification?.title ?? message.data['title']?.toString() ?? AppConstants.pushFallbackTitle;
         final body = message.notification?.body ?? message.data['body']?.toString() ?? '';
         RiderNotificationService.instance.insert(
           RiderNotification(
@@ -126,7 +127,7 @@ class FcmService {
 
       final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
       if (initialMessage != null) {
-        final title = initialMessage.notification?.title ?? initialMessage.data['title']?.toString() ?? 'Victoria Rides';
+        final title = initialMessage.notification?.title ?? initialMessage.data['title']?.toString() ?? AppConstants.pushFallbackTitle;
         final body = initialMessage.notification?.body ?? initialMessage.data['body']?.toString() ?? '';
         RiderNotificationService.instance.insert(
           RiderNotification(

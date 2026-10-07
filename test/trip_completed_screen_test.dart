@@ -88,7 +88,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(find.text('Victoria'), findsOneWidget);
+    expect(find.text('Victoria Rides'), findsOneWidget);
     expect(find.text('How was your ride with Tersoo?'), findsOneWidget);
     expect(find.text('Submit Rating'), findsOneWidget);
     // Rating is strictly optional: Skip is available both in AppBar and body

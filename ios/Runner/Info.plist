@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>VT Rides needs your location to show your pickup spot, find nearby drivers, and ensure accurate navigation.</string>
+	<string>Victoria Rides needs your location to show your pickup spot, find nearby drivers, and ensure accurate navigation.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -72,45 +73,23 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
       }
 
       // ApiClient returns the decoded body directly (Map or List), not a Dio Response.
-      // Handle all backend shapes: {data:[...],meta:{}} , {data:{rides:[...]}} , [...] , {rides:[...]}.
-      Map<String, dynamic>? responseMap;
-      List<dynamic>? rawList;
+      // Ride extraction is shared with the dashboard via parseList so both
+      // surfaces understand the same backend envelopes.
       Map<String, dynamic>? meta;
-
       if (res is Map<String, dynamic>) {
-        responseMap = res;
-        // Try top-level list wrappers
+        final responseMap = res;
         final dataField = responseMap['data'];
         if (dataField is List) {
-          rawList = dataField;
           meta = responseMap['meta'] as Map<String, dynamic>?;
           meta ??= responseMap['pagination'] as Map<String, dynamic>?;
-          // Also check dataField may contain meta at same level (some backends nest meta inside data)
         } else if (dataField is Map<String, dynamic>) {
-          rawList = (dataField['rides'] ??
-                  dataField['items'] ??
-                  dataField['history'] ??
-                  dataField['trips'] ??
-                  dataField['data'] ??
-                  dataField['results']) as List?;
           meta = (dataField['meta'] ??
                   dataField['pagination'] ??
                   responseMap['meta'] ??
                   responseMap['pagination']) as Map<String, dynamic>?;
-          // If data is a map with pagination inside, also look there
-          if (rawList == null && dataField['data'] is List) {
-            rawList = dataField['data'] as List;
-          }
         } else {
-          // Fallback: check alternative top-level keys
-          rawList = (responseMap['rides'] ??
-                  responseMap['items'] ??
-                  responseMap['history'] ??
-                  responseMap['trips'] ??
-                  responseMap['results']) as List?;
           meta = (responseMap['meta'] ?? responseMap['pagination']) as Map<String, dynamic>?;
         }
-        // meta may also be under pagination / paging at various levels
         meta ??= responseMap['pagination'] as Map<String, dynamic>?;
         meta ??= (responseMap['data'] is Map<String, dynamic>
             ? (responseMap['data'] as Map<String, dynamic>)['meta'] as Map<String, dynamic>?
@@ -118,29 +97,11 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
         meta ??= (responseMap['data'] is Map<String, dynamic>
             ? (responseMap['data'] as Map<String, dynamic>)['pagination'] as Map<String, dynamic>?
             : null);
-      } else if (res is List) {
-        rawList = res;
       }
 
-      final data = rawList;
-      if (data != null && data.isNotEmpty) {
-        final parsed = <RideHistoryItem>[];
-        for (final e in data) {
-          if (e is Map<String, dynamic>) {
-            try {
-              parsed.add(RideHistoryItem.fromJson(e));
-            } catch (err) {
-              debugPrint('[RideHistory] parse skip Map<String,dynamic>: $err');
-            }
-          } else if (e is Map) {
-            try {
-              parsed.add(RideHistoryItem.fromJson(Map<String, dynamic>.from(e)));
-            } catch (err) {
-              debugPrint('[RideHistory] parse skip Map: $err');
-            }
-          }
-        }
-        if (parsed.isNotEmpty) {
+      final rawMaps = RideHistoryItem.parseList(res);
+      final parsed = RideHistoryItem.parseAll(res);
+      if (parsed.isNotEmpty) {
           setState(() {
             _rides.addAll(parsed);
             _page++;
@@ -161,13 +122,9 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             }
           });
         } else {
-          debugPrint('[RideHistory] parsed empty despite rawList len ${data.length}');
+          debugPrint('[RideHistory] parsed empty despite rawList len ${rawMaps.length} res=$res');
           setState(() => _hasMore = false);
         }
-      } else {
-        debugPrint('[RideHistory] No data: res=$res meta=$meta');
-        setState(() => _hasMore = false);
-      }
     } catch (e) {
       debugPrint('[RideHistory] _loadMore error: $e');
       if (mounted) {
@@ -624,7 +581,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                       const SizedBox(height: 6),
                       Text(
                         _tab == 0
-                            ? 'You have not taken any rides yet. Start your journey with Victoria Rides today!'
+                            ? AppConstants.rideHistoryEmpty
                             : 'You have no ${_tabs[_tab].toLowerCase()} rides in your history.',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: AppColors.onSurfaceVariant,
@@ -742,4 +699,56 @@ class RideHistoryItem {
   }
 
   double get displayFareNgn => settledFareNgn ?? fareNgn;
+
+  /// Extracts the raw ride maps from any known backend envelope:
+  /// `{data:[...]}`, `{data:{rides/items/history/trips/data/results}}`,
+  /// a bare list, or top-level `{rides/items/history/trips/results}`.
+  /// Shared with the dashboard's Recent Activity so both surfaces parse
+  /// identically (shape drift here is what left the dashboard empty).
+  static List<Map<String, dynamic>> parseList(dynamic res) {
+    List<dynamic>? rawList;
+    if (res is Map<String, dynamic>) {
+      final dataField = res['data'];
+      if (dataField is List) {
+        rawList = dataField;
+      } else if (dataField is Map<String, dynamic>) {
+        rawList = (dataField['rides'] ??
+                dataField['items'] ??
+                dataField['history'] ??
+                dataField['trips'] ??
+                dataField['data'] ??
+                dataField['results']) as List?;
+      } else {
+        rawList = (res['rides'] ??
+                res['items'] ??
+                res['history'] ??
+                res['trips'] ??
+                res['results']) as List?;
+      }
+    } else if (res is List) {
+      rawList = res;
+    }
+    if (rawList == null) return const [];
+    return [
+      for (final e in rawList)
+        if (e is Map<String, dynamic>)
+          e
+        else if (e is Map)
+          Map<String, dynamic>.from(e),
+    ];
+  }
+
+  /// Parses every ride in [res], skipping unparseable rows individually so
+  /// one bad record never empties the whole list.
+  static List<RideHistoryItem> parseAll(dynamic res) {
+    final parsed = <RideHistoryItem>[];
+    for (final map in parseList(res)) {
+      try {
+        parsed.add(RideHistoryItem.fromJson(map));
+      } catch (err) {
+        debugPrint('[RideHistory] parse skip: $err');
+      }
+    }
+    return parsed;
+  }
 }

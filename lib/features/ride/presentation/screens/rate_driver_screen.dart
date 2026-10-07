@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -130,7 +131,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: AppBackButton(onPressed: _navigateToDashboard),
-        title: const Text('Victoria'),
+        title: const Text(AppConstants.appBarTitle),
         actions: [
           TextButton(
             onPressed: _navigateToDashboard,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -125,7 +126,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
       child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          title: const Text('Victoria Rides'),
+          title: const Text(AppConstants.appBarTitle),
           actions: const [
             Padding(
               padding: EdgeInsets.only(right: 16),
@@ -153,7 +154,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'We hope you had a pleasant executive ride experience with Victoria Travels.',
+                AppConstants.tripCompletedSubtitle,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: AppColors.onSurfaceVariant,
                 ),

@@ -4,6 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/session_controller.dart';
@@ -749,7 +750,7 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Confirming your transaction with Victoria Rides server.',
+          AppConstants.paymentVerifying,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: AppColors.onSurfaceVariant,
           ),
@@ -790,7 +791,7 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
         ),
         const SizedBox(height: 6),
         Text(
-          '$_formattedFare has been received. Thank you for riding with Victoria Travels!',
+          AppConstants.paymentThankYou(_formattedFare),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: AppColors.onSurfaceVariant,
           ),

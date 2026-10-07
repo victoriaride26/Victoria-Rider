@@ -6,6 +6,7 @@ import '../../../../core/models/saved_place.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/benue_gazetteer.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../payments/data/rider_wallet_repository.dart';
 import '../../../../core/services/places_storage_service.dart';
 import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -41,8 +42,28 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+/// One row in the dashboard's Recent Activity: either a ride or a wallet
+/// top-up, newest first.
+class _DashboardActivity {
+  const _DashboardActivity({
+    required this.title,
+    required this.subtitle,
+    required this.amountNgn,
+    required this.isCredit,
+    required this.isRide,
+    required this.createdAt,
+  });
+
+  final String title;
+  final String subtitle;
+  final double amountNgn;
+  final bool isCredit;
+  final bool isRide;
+  final DateTime createdAt;
+}
+
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  List<RideHistoryItem> _recentActivity = [];
+  List<_DashboardActivity> _recentActivity = [];
   final _locationService = LocationService();
   CurrentLocation? _currentLocation;
   bool _locationLoading = true;
@@ -141,39 +162,59 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Loads the top-5 Recent Activity from both feeds — latest rides plus
+  /// wallet top-ups — newest first. Ride parsing is shared with the history
+  /// tab (same envelopes); each feed fails independently so one bad endpoint
+  /// never empties the widget.
   Future<void> _loadDashboardData() async {
+    final activities = <_DashboardActivity>[];
+
     try {
-      final res = await ApiClient.instance.get('/api/v1/rides/history?page=1&limit=3');
-      if (!mounted) return;
-      List<dynamic>? rawList;
-      if (res is Map<String, dynamic>) {
-        final dataField = res['data'];
-        if (dataField is List) {
-          rawList = dataField;
-        } else if (dataField is Map<String, dynamic>) {
-          rawList = (dataField['rides'] ?? dataField['items'] ?? dataField['history'] ?? dataField['data']) as List?;
-        } else {
-          rawList = (res['rides'] ?? res['items'] ?? res['history']) as List?;
-        }
-      } else if (res is List) {
-        rawList = res;
-      }
-      if (rawList != null && rawList.isNotEmpty) {
-        final rides = <RideHistoryItem>[];
-        for (final e in rawList) {
-          if (e is Map<String, dynamic>) {
-            try { rides.add(RideHistoryItem.fromJson(e)); } catch (_) {}
-          } else if (e is Map) {
-            try { rides.add(RideHistoryItem.fromJson(Map<String, dynamic>.from(e))); } catch (_) {}
-          }
-        }
-        if (mounted) setState(() => _recentActivity = rides);
-      } else {
-        if (mounted) setState(() => _recentActivity = []);
+      final res = await ApiClient.instance.get(
+        '/api/v1/rides/history?page=1&limit=5',
+      );
+      for (final ride in RideHistoryItem.parseAll(res)) {
+        activities.add(
+          _DashboardActivity(
+            title: ride.dropoffAddress.isNotEmpty
+                ? ride.dropoffAddress
+                : 'Trip',
+            subtitle:
+                '${ride.createdAt.day}/${ride.createdAt.month}/${ride.createdAt.year} • ${ride.status}',
+            amountNgn: ride.displayFareNgn,
+            isCredit: false,
+            isRide: true,
+            createdAt: ride.createdAt,
+          ),
+        );
       }
     } catch (e) {
-      debugPrint('[HomeScreen] _loadDashboardData error: $e');
+      debugPrint('[HomeScreen] rides activity error: $e');
     }
+
+    try {
+      final txns = await RiderWalletRepository.instance.getTransactions();
+      for (final tx in txns) {
+        if (!tx.isCredit) continue;
+        activities.add(
+          _DashboardActivity(
+            title: tx.title.isNotEmpty ? tx.title : 'Wallet Top-up',
+            subtitle:
+                '${tx.createdAt.day}/${tx.createdAt.month}/${tx.createdAt.year} • ${tx.status}',
+            amountNgn: tx.amountNgn,
+            isCredit: true,
+            isRide: false,
+            createdAt: tx.createdAt,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[HomeScreen] funding activity error: $e');
+    }
+
+    if (!mounted) return;
+    activities.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    setState(() => _recentActivity = activities.take(5).toList());
   }
 
   String _getGreeting() {
@@ -829,7 +870,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               const SizedBox(height: 6),
 
               if (_recentActivity.isNotEmpty) ...[
-                for (final tx in _recentActivity.take(3))
+                for (final tx in _recentActivity)
                   Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(14),
@@ -843,12 +884,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: AppColors.surfaceContainerLow,
+                            color: tx.isCredit
+                                ? AppColors.primary.withValues(alpha: 0.1)
+                                : AppColors.surfaceContainerLow,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(
-                            Icons.directions_car,
-                            color: AppColors.onSurfaceVariant,
+                          child: Icon(
+                            tx.isCredit
+                                ? Icons.account_balance_wallet
+                                : Icons.directions_car,
+                            color: tx.isCredit
+                                ? AppColors.primary
+                                : AppColors.onSurfaceVariant,
                             size: 22,
                           ),
                         ),
@@ -858,7 +905,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                tx.dropoffAddress.isNotEmpty ? tx.dropoffAddress : 'Dropoff',
+                                tx.title,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14,
@@ -869,7 +916,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                '${tx.createdAt.day}/${tx.createdAt.month}/${tx.createdAt.year} • ${tx.status}',
+                                tx.subtitle,
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: AppColors.onSurfaceVariant,
                                   fontSize: 12,
@@ -882,32 +929,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              '-₦${tx.fareNgn.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
-                              style: const TextStyle(
+                              '${tx.isCredit ? '+' : '-'}₦${tx.amountNgn.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                              style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 15,
-                                color: AppColors.onSurface,
+                                color: tx.isCredit
+                                    ? AppColors.primary
+                                    : AppColors.onSurface,
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            InkWell(
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      const DestinationSearchScreen(
-                                        currentLocation: null,
-                                      ),
+                            if (tx.isRide) ...[
+                              const SizedBox(height: 2),
+                              InkWell(
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) =>
+                                        const DestinationSearchScreen(
+                                          currentLocation: null,
+                                        ),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Rebook',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
+                                  ),
                                 ),
                               ),
-                              child: const Text(
-                                'Rebook',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                            ),
+                            ],
                           ],
                         ),
                       ],
@@ -949,7 +1000,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Your completed trips and rides around Makurdi will appear here.',
+                        'Your completed trips and wallet top-ups around locations in Nigeria will appear here.',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: AppColors.onSurfaceVariant,
                         ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/session_controller.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/data/auth_repository.dart';
@@ -156,7 +157,7 @@ class ProfileScreen extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Log Out'),
         content: const Text(
-          'Are you sure you want to log out of your Victoria Rides account?',
+          AppConstants.logoutConfirmMessage,
         ),
         actions: [
           TextButton(

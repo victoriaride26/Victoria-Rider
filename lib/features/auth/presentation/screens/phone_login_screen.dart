@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
@@ -89,7 +90,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: const AppBackButton(),
-        title: const Text('Victoria'),
+        title: const Text(AppConstants.appBarTitle),
         actions: const [
           Padding(
             padding: EdgeInsets.only(right: 16),

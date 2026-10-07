@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/config/api_config.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/rider_socket_service.dart';
@@ -79,7 +80,7 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'Ride search aborted: Estimated fare must be obtained from VT Rides.',
+                AppConstants.rideSearchAbortedFare,
               ),
               backgroundColor: AppColors.error,
             ),
@@ -433,7 +434,7 @@ class _SearchingForDriverScreenState extends State<SearchingForDriverScreen> {
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        'Finding your Victoria driver nearby...',
+                        AppConstants.findingDriverMessage,
                         textAlign: TextAlign.center,
                         style: theme.textTheme.titleMedium,
                       ),

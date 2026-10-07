@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/models/geocoding_result.dart';
@@ -236,7 +237,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
         setState(() {
           _error = rawMsg.isNotEmpty
               ? rawMsg
-              : 'Estimated fare must be obtained from VT Rides.';
+              : AppConstants.fareEstimateMissing;
           _estimate = null;
           _vehicleEstimates.clear();
         });
@@ -279,7 +280,7 @@ class _RideRequestSheetState extends State<RideRequestSheet>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Cannot request ride: Estimated fare must be obtained from VT Rides, otherwise ABORT.',
+              AppConstants.fareEstimateMissingAbort,
             ),
             backgroundColor: AppColors.error,
           ),

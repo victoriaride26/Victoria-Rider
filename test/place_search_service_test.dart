@@ -10,6 +10,7 @@ import 'package:vtrides/core/services/benue_gazetteer.dart';
 import 'package:vtrides/core/services/geoapify_geocoding_service.dart';
 import 'package:vtrides/core/services/mapbox_geocoding_service.dart';
 import 'package:vtrides/core/services/place_search_service.dart';
+import 'package:vtrides/features/ride/presentation/screens/ride_history_screen.dart';
 
 BenueGazetteer _gazetteer() => BenueGazetteer([
       GazetteerEntry(
@@ -329,6 +330,75 @@ void main() {
       final result = await service.reverseGeocode(LatLng(9.0, 9.0));
       expect(result, isNotNull);
       expect(result!.placeName, contains('Remote Place'));
+    });
+  });
+
+  group('RideHistoryItem.parseList envelopes', () {
+    Map<String, dynamic> ride() => {
+          'id': 'r1',
+          'status': 'COMPLETED',
+          'createdAt': '2026-09-03T12:00:00.000Z',
+          'estimatedFare': 250000,
+          'dropoffAddress': 'High Level, Makurdi',
+          'pickupAddress': 'Wurukum, Makurdi',
+        };
+
+    test('understands every known envelope', () {
+      final envelopes = <dynamic>[
+        {
+          'success': true,
+          'data': [ride()],
+        },
+        {
+          'success': true,
+          'data': {
+            'rides': [ride()],
+          },
+        },
+        {
+          'success': true,
+          'data': {
+            'trips': [ride()],
+          },
+        },
+        {
+          'success': true,
+          'data': {
+            'results': [ride()],
+          },
+        },
+        {
+          'success': true,
+          'data': {
+            'data': [ride()],
+          },
+        },
+        [ride()],
+        {
+          'rides': [ride()],
+        },
+        {
+          'trips': [ride()],
+        },
+      ];
+      for (final envelope in envelopes) {
+        final parsed = RideHistoryItem.parseAll(envelope);
+        expect(parsed, hasLength(1), reason: 'envelope: $envelope');
+        expect(parsed.first.id, 'r1');
+        expect(parsed.first.displayFareNgn, 2500.0);
+      }
+    });
+
+    test('unknown shapes parse to empty, never throw', () {
+      expect(RideHistoryItem.parseAll(null), isEmpty);
+      expect(RideHistoryItem.parseAll({'success': true}), isEmpty);
+      expect(
+        RideHistoryItem.parseAll({
+          'success': true,
+          'data': {'unknown': []},
+        }),
+        isEmpty,
+      );
     });
   });
 
