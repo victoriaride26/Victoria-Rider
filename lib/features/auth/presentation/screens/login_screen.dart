@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_primary_button.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../rider/presentation/screens/rider_home_shell.dart';
 import '../../data/auth_repository.dart';
+import 'forgot_password_screen.dart';
 import 'phone_login_screen.dart';
 
 /// R-06 — Rider Login: sign in after completing the profile form.
@@ -238,6 +239,17 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const Text('Remember me'),
                               ],
                             ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) =>
+                                      const ForgotPasswordScreen(),
+                                ),
+                              );
+                            },
+                            child: const Text('Forgot Password?'),
                           ),
                         ],
                       ),
