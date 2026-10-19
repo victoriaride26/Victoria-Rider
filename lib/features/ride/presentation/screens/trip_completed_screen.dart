@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_constants.dart';
@@ -46,12 +48,85 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
   /// matches the driver's trip summary (never the pre-request estimate).
   double? _fareNgn;
 
+  /// Waiting-time surcharge portion of [_fareNgn] (0 when none).
+  double _waitingChargeNgn = 0;
+
+  /// Polls the ride status until the backend settles the trip, so a payment
+  /// that completed on Paystack (or via the backend webhook) flips this
+  /// receipt to confirmed — and unlocks rating — without a second charge.
+  Timer? _settlePollTimer;
+
   @override
   void initState() {
     super.initState();
     _isPaymentConfirmed = widget.isPaymentConfirmed;
     _fareNgn = widget.fareNgn;
     _refreshFare();
+    if (!_isPaymentConfirmed) _startSettlePolling();
+  }
+
+  @override
+  void dispose() {
+    _settlePollTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startSettlePolling() {
+    _settlePollTimer?.cancel();
+    _settlePollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (!mounted || _isPaymentConfirmed) {
+        _settlePollTimer?.cancel();
+        return;
+      }
+      final id = widget.rideId;
+      if (id == null || id.isEmpty) return;
+      try {
+        final res = await ApiClient.instance.get(ApiConfig.rideStatus(id));
+        if (!mounted) return;
+        final fare = FareParser.finalFareNgn(res);
+        final waiting = FareParser.waitingChargeNgn(res);
+        final settled = _isRideSettled(res);
+        if (settled || (fare != null && fare > 0)) {
+          setState(() {
+            if (fare != null && fare > 0) _fareNgn = fare;
+            _waitingChargeNgn = waiting;
+            if (settled) {
+              _isPaymentConfirmed = true;
+              _settlePollTimer?.cancel();
+            }
+          });
+        }
+      } catch (_) {
+        // Transient — keep polling while the receipt is open.
+      }
+    });
+  }
+
+  /// Mirrors the payment sheet's settled check: COMPLETED status or a
+  /// verified ridePayment means the money is accounted for — rating must
+  /// not fail with "Trip is not complete".
+  static bool _isRideSettled(dynamic statusPayload) {
+    final json = FareParser.unwrap(statusPayload);
+    final status = (json['status'] ?? json['state'])?.toString().toUpperCase();
+    if (status == 'COMPLETED' || status == 'COMPLETE') return true;
+    final payment = json['ridePayment'];
+    if (payment is Map) {
+      final payStatus = (payment['status'] ?? payment['paymentStatus'])
+          ?.toString()
+          .toUpperCase();
+      if (payStatus != null &&
+          (payStatus.contains('VERIFIED') ||
+              payStatus.contains('SUCCESS') ||
+              payStatus.contains('PAID') ||
+              payStatus == 'COMPLETED' ||
+              payStatus == 'COMPLETE')) {
+        return true;
+      }
+      if (payment['isVerified'] == true || payment['verified'] == true) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Future<void> _refreshFare() async {
@@ -60,9 +135,17 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
     try {
       final res = await ApiClient.instance.get(ApiConfig.rideStatus(id));
       final fare = FareParser.finalFareNgn(res);
-      if (fare != null && fare > 0 && mounted) {
-        setState(() => _fareNgn = fare);
-      }
+      final waiting = FareParser.waitingChargeNgn(res);
+      final settled = _isRideSettled(res);
+      if (!mounted) return;
+      setState(() {
+        if (fare != null && fare > 0) _fareNgn = fare;
+        _waitingChargeNgn = waiting;
+        if (settled) {
+          _isPaymentConfirmed = true;
+          _settlePollTimer?.cancel();
+        }
+      });
     } catch (_) {
       // Keep the fare passed in by the trip screen.
     }
@@ -309,6 +392,44 @@ class _TripCompletedScreenState extends State<TripCompletedScreen> {
                         ),
                       ],
                     ),
+                    if (_waitingChargeNgn > 0 && fareNgn != null) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Trip fare',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            '₦${(fareNgn - _waitingChargeNgn).toStringAsFixed(0)}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Waiting charge',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            '₦${_waitingChargeNgn.toStringAsFixed(0)}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const Divider(height: 24, color: AppColors.outlineVariant),
                     // Driver info
                     Row(

@@ -6,6 +6,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
 import '../../data/auth_repository.dart';
+import 'login_screen.dart';
 import 'otp_verification_screen.dart';
 
 /// R-03 — Phone Login: collect the rider's phone number.
@@ -53,17 +54,23 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
     try {
       // Normalize to E.164 without '+' (e.g. 2348012345678).
       final phone = AuthRepository.normalizePhone(raw, countryCode: code);
-      await AuthRepository.instance.sendPhoneOtp(
+      // The backend echoes the OTP in dev builds only — capture it here and
+      // hand it to the verification screen so exactly ONE code is ever sent
+      // (the old flow fired a second send-otp on screen open, invalidating
+      // the first SMS).
+      final devOtp = await AuthRepository.instance.sendPhoneOtp(
         phone,
         onboardingToken: widget.onboardingToken,
       );
       if (!mounted) return;
+      setState(() => _loading = false);
       Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => OtpVerificationScreen(
             phone: phone,
             countryCode: code,
             onboardingToken: widget.onboardingToken,
+            devOtp: devOtp,
           ),
         ),
       );
@@ -104,6 +111,27 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Center(
+                child: Column(
+                  children: [
+                    Image.asset(
+                      'assets/icons/t-logo.png',
+                      height: 96,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Welcome to\nVictoria Rides',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
               Text('Enter your phone number',
                   style: theme.textTheme.headlineMedium),
               const SizedBox(height: 8),
@@ -201,6 +229,22 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                 icon: Icons.arrow_forward,
                 loading: _loading,
                 onPressed: _sendOtp,
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const LoginScreen(),
+                      ),
+                    );
+                  },
+                  child: const Text(
+                    'Already have an account? Login',
+                    style: TextStyle(color: AppColors.primary),
+                  ),
+                ),
               ),
             ],
           ),

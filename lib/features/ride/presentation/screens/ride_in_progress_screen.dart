@@ -398,7 +398,7 @@ class _RideInProgressScreenState extends State<RideInProgressScreen> {
 
         _updateLiveFare(data);
         
-        final extraCharge = data['extraCharge'];
+        final extraCharge = data['extraCharge'] ?? data['waitingCharge'];
         if (extraCharge != null) {
            ScaffoldMessenger.of(context).showSnackBar(
              const SnackBar(

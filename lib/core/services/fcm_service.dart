@@ -88,6 +88,7 @@ class FcmService {
           'trip_in_progress' || 'trip_started' || 'in_progress' || 'started' => RiderNotificationType.tripInProgress,
           'stopover' || 'stop_over' || 'stop' || 'stop_added' => RiderNotificationType.stopOver,
           'payment' || 'wallet' || 'payout' => RiderNotificationType.payment,
+          'payment_pending' || 'paymentpending' || 'ride_payment_pending' => RiderNotificationType.payment,
           'payment_successful' || 'payment_success' || 'payment_completed' => RiderNotificationType.paymentSuccessful,
           'trip_ended' || 'trip_completed' || 'completed' || 'ended' => RiderNotificationType.tripEnded,
           'promo' || 'promotion' => RiderNotificationType.promo,

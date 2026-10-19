@@ -6,13 +6,14 @@ import '../../../../core/widgets/app_back_button.dart';
 import '../../../../core/widgets/app_primary_button.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../data/auth_repository.dart';
-import 'login_screen.dart';
+import 'email_verification_screen.dart';
 
 /// R-05 — Create Account: name + email + password (step 2 of onboarding).
 ///
 /// The phone number was already verified on the OTP step. Submitting here
-/// calls `POST /auth/register` (role RIDER) and redirects the rider to the
-/// login screen so they can sign in to their new account.
+/// calls `POST /auth/register` (role RIDER) and forwards the rider to the
+/// email verification screen, since the backend emails a 6-digit OTP at
+/// registration that must be confirmed via `POST /auth/verify-email`.
 class ProfileSetupScreen extends StatefulWidget {
   const ProfileSetupScreen({super.key, required this.phone});
 
@@ -55,8 +56,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       _error = null;
     });
     try {
-      // Register creates the rider account (role RIDER).
-      // Redirect the rider to the login screen so they can sign in.
+      // Register creates the rider account (role RIDER), which triggers
+      // the backend email OTP. Forward to email verification so the rider
+      // has somewhere to enter the code.
       await _auth.register(
         firstName: _firstNameController.text,
         lastName: _lastNameController.text,
@@ -64,17 +66,18 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         password: _passwordController.text,
         phone: widget.phone,
       );
+      final email = _emailController.text.trim();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account created successfully! Please sign in to continue.'),
+        SnackBar(
+          content: Text('Account created! Enter the code sent to $email.'),
           backgroundColor: AppColors.primary,
           behavior: SnackBarBehavior.floating,
         ),
       );
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute<void>(
-          builder: (_) => LoginScreen(initialEmail: _emailController.text.trim()),
+          builder: (_) => EmailVerificationScreen(email: email),
         ),
         (route) => false,
       );

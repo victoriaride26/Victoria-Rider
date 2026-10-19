@@ -73,6 +73,15 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
   double? _pageProgress;
   bool _verificationStarted = false;
 
+  /// Backend-refreshed checkout total (settled → estimate). Initialized from
+  /// the fare passed in, then replaced by the status-query refresh so the
+  /// rider always pays the final backend amount — never a stale estimate.
+  late double _displayFareNgn;
+
+  /// Waiting-time surcharge portion of [_displayFareNgn] (0 when none), shown
+  /// as a breakdown so the rider sees why the total grew past the estimate.
+  double _waitingChargeNgn = 0;
+
   @override
   void initState() {
     super.initState();
@@ -80,13 +89,77 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
     _selectedChannel = m.contains('TRANSFER')
         ? _PaymentChannel.transfer
         : _PaymentChannel.card;
+    _displayFareNgn = widget.fareNgn;
   }
 
   String get _formattedFare {
-    return '₦${widget.fareNgn.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
+    return '₦${_displayFareNgn.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
+  }
+
+  String get _formattedWaiting {
+    return '₦${_waitingChargeNgn.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
+  }
+
+  double get _baseFareNgn =>
+      (_displayFareNgn - _waitingChargeNgn) > 0
+          ? _displayFareNgn - _waitingChargeNgn
+          : _displayFareNgn;
+
+  String get _formattedBase {
+    return '₦${_baseFareNgn.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}';
+  }
+
+  /// True when the backend already considers this ride paid/complete.
+  ///
+  /// Used before creating a Paystack transaction: if a previous attempt
+  /// already settled the ride (e.g. the rider paid, the app errored, and
+  /// they tapped Pay again), we must NOT create a second charge.
+  static bool _isRideSettled(dynamic statusPayload) {
+    final json = FareParser.unwrap(statusPayload);
+    final status = (json['status'] ?? json['state'])?.toString().toUpperCase();
+    if (status == 'COMPLETED' || status == 'COMPLETE') return true;
+    final payment = json['ridePayment'];
+    if (payment is Map) {
+      final payStatus = (payment['status'] ?? payment['paymentStatus'])
+          ?.toString()
+          .toUpperCase();
+      if (payStatus != null &&
+          (payStatus.contains('VERIFIED') ||
+              payStatus.contains('SUCCESS') ||
+              payStatus.contains('PAID') ||
+              payStatus == 'COMPLETED' ||
+              payStatus == 'COMPLETE')) {
+        return true;
+      }
+      if (payment['isVerified'] == true || payment['verified'] == true) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Polls `GET /rides/:id/status` until the ride reads COMPLETED (the
+  /// backend settles asynchronously — tolerant verify + Paystack webhook),
+  /// giving up after [timeout] so the sheet never spins forever.
+  Future<bool> _waitForSettlement({Duration timeout = const Duration(seconds: 25)}) async {
+    final id = widget.rideId;
+    if (id == null || id.isEmpty) return false;
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (!mounted) return false;
+      try {
+        final res = await ApiClient.instance.get(ApiConfig.rideStatus(id));
+        if (_isRideSettled(res)) return true;
+      } catch (_) {
+        // Transient — keep polling until the deadline.
+      }
+    }
+    return false;
   }
 
   Future<void> _initiatePayment() async {
+    if (_verificationStarted) return;
     setState(() {
       _loading = true;
       _errorMessage = null;
@@ -98,12 +171,29 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
     if (widget.rideId != null) {
       try {
         final response = await ApiClient.instance.get(ApiConfig.rideStatus(widget.rideId!));
+        // Never charge twice: a previous attempt may already have settled
+        // the ride (paid on Paystack, app showed an error, rider tapped Pay
+        // again). Settle locally instead of creating a second transaction.
+        if (_isRideSettled(response)) {
+          if (!mounted) return;
+          setState(() => _step = _PaymentStep.success);
+          final onConfirmed = widget.onPaymentConfirmed;
+          if (mounted) Navigator.of(context).pop(true);
+          onConfirmed(true);
+          return;
+        }
         // Settled fare when present, otherwise the backend estimate — the same
         // rule the driver app uses, so both sides charge/show the same amount.
         final backendFare = FareParser.finalFareNgn(response);
         if (backendFare != null && backendFare > 0) {
           finalFare = backendFare;
         }
+        final waiting = FareParser.waitingChargeNgn(response);
+        if (!mounted) return;
+        setState(() {
+          _displayFareNgn = finalFare;
+          _waitingChargeNgn = waiting;
+        });
       } catch (e) {
         debugPrint('[RidePaymentSheet] Error querying latest fare: $e');
       }
@@ -300,10 +390,30 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
               data['data']?['gateway_response'] == 'Successful'));
 
       if (isSuccess || (widget.rideId != null && data['status'] == true)) {
+        // Paystack confirms the money moved. The backend settles
+        // asynchronously (tolerant verify + Paystack webhook), so confirm the
+        // ride actually reads COMPLETED before declaring success — otherwise
+        // the rider sees an error and pays a second time for one trip.
+        var settled = true;
+        if (widget.rideId != null) {
+          settled = await _waitForSettlement();
+        }
         if (!mounted) return;
         setState(() {
           _step = _PaymentStep.success;
         });
+        if (!settled) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Payment received — the receipt will confirm automatically '
+                  'once the backend finishes processing.',
+                ),
+              ),
+            );
+        }
         // Dismiss the sheet BEFORE notifying the caller: the callback may
         // push a new route on the root navigator, and popping afterwards
         // would remove that new route (skipping the Rate Driver screen).
@@ -312,6 +422,7 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
         onConfirmed(true);
       } else {
         if (!mounted) return;
+        _verificationStarted = false;
         setState(() {
           _step = _PaymentStep.select;
           _errorMessage =
@@ -481,6 +592,44 @@ class _RidePaymentSheetState extends State<RidePaymentSheet> {
                   ),
                 ],
               ),
+              if (_waitingChargeNgn > 0) ...[
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Trip fare',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      _formattedBase,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Waiting charge',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      _formattedWaiting,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               if (widget.driverName != null) ...[
                 const SizedBox(height: 8),
                 Row(

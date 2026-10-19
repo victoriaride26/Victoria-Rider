@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/navigation/app_router.dart';
@@ -9,7 +10,10 @@ import '../../../../core/widgets/app_primary_button.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../rider/presentation/screens/rider_home_shell.dart';
 import '../../data/auth_repository.dart';
+import 'email_verification_screen.dart';
 import 'forgot_password_screen.dart';
+import 'legal_consent_screen.dart';
+import 'legal_document_screen.dart';
 import 'phone_login_screen.dart';
 
 /// R-06 — Rider Login: sign in after completing the profile form.
@@ -32,10 +36,24 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loading = false;
   SocialProvider? _socialLoading;
   bool _rememberMe = true;
+  late final TapGestureRecognizer _termsRecognizer;
+  late final TapGestureRecognizer _privacyRecognizer;
 
   @override
   void initState() {
     super.initState();
+    _termsRecognizer = TapGestureRecognizer()
+      ..onTap = () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const TermsAndConditionsScreen(),
+            ),
+          );
+    _privacyRecognizer = TapGestureRecognizer()
+      ..onTap = () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const PrivacyPolicyScreen(),
+            ),
+          );
     final session = SessionController.instance;
     _rememberMe = session.rememberMe;
     final rememberedEmail = session.rememberedEmail;
@@ -54,6 +72,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _termsRecognizer.dispose();
+    _privacyRecognizer.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -69,6 +89,40 @@ class _LoginScreenState extends State<LoginScreen> {
           backgroundColor: isError ? AppColors.error : null,
         ),
       );
+  }
+
+  /// True when the backend rejected the login because the email address
+  /// has not been verified yet (e.g. 403 "Email not verified").
+  bool _isEmailNotVerified(ApiException e) {
+    final msg = e.message.toLowerCase();
+    return msg.contains('not verified') ||
+        msg.contains('unverified') ||
+        msg.contains('verify your email') ||
+        msg.contains('email verification') ||
+        msg.contains('confirm your email') ||
+        msg.contains('confirm email');
+  }
+
+  void _goToEmailVerification(String email) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EmailVerificationScreen(email: email.trim()),
+      ),
+    );
+  }
+
+  /// Sign up entry: riders who have not accepted the legal documents yet are
+  /// routed through the consent gate before phone verification starts.
+  Future<void> _goToSignUp() async {
+    final accepted = await LegalConsentScreen.hasAccepted();
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => accepted
+            ? const PhoneLoginScreen()
+            : const LegalConsentScreen(),
+      ),
+    );
   }
 
   Future<void> _login() async {
@@ -91,6 +145,11 @@ class _LoginScreenState extends State<LoginScreen> {
     } on ApiException catch (e) {
       setState(() => _loading = false);
       _showMessage(e.message, isError: true);
+      // The account exists but the email OTP was never entered — send the
+      // rider straight to the verification screen so the code has a home.
+      if (_isEmailNotVerified(e)) {
+        _goToEmailVerification(_emailController.text);
+      }
     } catch (_) {
       setState(() => _loading = false);
       _showMessage('Something went wrong. Please try again.', isError: true);
@@ -118,11 +177,15 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       if (result.requiresPhoneVerification) {
         setState(() => _socialLoading = null);
+        final phoneScreen = PhoneLoginScreen(
+          onboardingToken: result.onboardingToken,
+        );
+        final accepted = await LegalConsentScreen.hasAccepted();
+        if (!mounted) return;
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => PhoneLoginScreen(
-              onboardingToken: result.onboardingToken,
-            ),
+            builder: (_) =>
+                accepted ? phoneScreen : LegalConsentScreen(next: phoneScreen),
           ),
         );
         return;
@@ -259,7 +322,23 @@ class _LoginScreenState extends State<LoginScreen> {
                         loading: _loading,
                         onPressed: _login,
                       ),
-                      const SizedBox(height: 24),
+                      Center(
+                        child: TextButton(
+                          onPressed: () {
+                            final email = _emailController.text.trim();
+                            if (!email.contains('@')) {
+                              _showMessage(
+                                'Enter your account email above, then tap Verify email.',
+                                isError: true,
+                              );
+                              return;
+                            }
+                            _goToEmailVerification(email);
+                          },
+                          child: const Text('Didn\'t verify your email? Verify now'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
                           const Expanded(child: Divider()),
@@ -313,12 +392,43 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ),
                       const SizedBox(height: 24),
-                      Text(
-                        'By continuing, you agree to our Terms of Service '
-                        'and Privacy Policy.',
+                      Center(
+                        child: TextButton(
+                          onPressed: _goToSignUp,
+                          child: const Text(
+                            "Don't have an account? Sign up",
+                            style: TextStyle(color: AppColors.primary),
+                          ),
+                        ),
+                      ),
+                      RichText(
                         textAlign: TextAlign.center,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: AppColors.secondary,
+                        text: TextSpan(
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: AppColors.secondary,
+                          ),
+                          children: [
+                            const TextSpan(
+                                text: 'By continuing, you agree to our '),
+                            TextSpan(
+                              text: 'Terms and Conditions',
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              recognizer: _termsRecognizer,
+                            ),
+                            const TextSpan(text: ' and '),
+                            TextSpan(
+                              text: 'Privacy Policy',
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              recognizer: _privacyRecognizer,
+                            ),
+                            const TextSpan(text: '.'),
+                          ],
                         ),
                       ),
                     ],

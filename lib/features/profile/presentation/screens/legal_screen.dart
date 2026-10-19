@@ -98,7 +98,7 @@ class _LegalTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(color: AppColors.surfaceContainerLowest, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.outlineVariant)),
-      child: ListTile(leading: Icon(icon, color: AppColors.primary), title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)), subtitle: subtitle != null ? Text(subtitle!, style: const TextStyle(color: AppColors.onSurfaceVariant, fontSize: 12)) : null, trailing: const Icon(Icons.chevron_right, size: 18, color: AppColors.outline), onTap: onTap),
+      child: ListTile(leading: Container(width: 40, height: 40, decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: AppColors.onPrimaryContainer, size: 20)), title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)), subtitle: subtitle != null ? Text(subtitle!, style: const TextStyle(color: AppColors.onSurfaceVariant, fontSize: 12)) : null, trailing: const Icon(Icons.chevron_right, size: 18, color: AppColors.outline), onTap: onTap),
     );
   }
 }

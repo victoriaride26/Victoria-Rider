@@ -96,5 +96,80 @@ void main() {
       expect(FareParser.scalarNgn('junk'), isNull);
       expect(FareParser.scalarNgn(null), isNull);
     });
+
+    test('settled fare reads top-level finalFare/grossFare (PAYMENT_PENDING broadcasts)', () {
+      // Backend now emits grossFare/finalFare/finalAmount at the top level of
+      // ride:state PAYMENT_PENDING, ride:fare:updated, /rides/current and
+      // /rides/:id/status — with no ridePayment object required.
+      expect(
+        FareParser.finalFareNgn({
+          'status': 'PAYMENT_PENDING',
+          'grossFare': 557000,
+          'finalFare': 557000,
+          'waitingCharge': 400000,
+          'estimatedFare': 157000,
+        }),
+        5570.0,
+      );
+      expect(
+        FareParser.finalFareNgn({'finalAmount': 557000}),
+        5570.0,
+      );
+      expect(
+        FareParser.finalFareNgn({
+          'data': {'finalFare': 557000},
+        }),
+        5570.0,
+      );
+      // ridePayment still wins when both are present.
+      expect(
+        FareParser.finalFareNgn({
+          'finalFare': 500000,
+          'ridePayment': {'finalAmount': 557000},
+        }),
+        5570.0,
+      );
+    });
+
+    test('waitingChargeKobo reads top-level, ridePayment and fare objects', () {
+      expect(
+        FareParser.waitingChargeKobo({
+          'status': 'PAYMENT_PENDING',
+          'finalFare': 557000,
+          'waitingCharge': 400000,
+        }),
+        400000,
+      );
+      expect(
+        FareParser.waitingChargeKobo({
+          'ridePayment': {'waitingCharge': 400000},
+        }),
+        400000,
+      );
+      expect(
+        FareParser.waitingChargeKobo({'extraCharge': 25000}),
+        25000,
+      );
+      expect(FareParser.waitingChargeKobo({'status': 'COMPLETED'}), 0);
+      expect(
+        FareParser.waitingChargeNgn({'waitingCharge': 400000}),
+        4000.0,
+      );
+    });
+
+    test('scalarNgn resolves final amounts out of fare-update event maps', () {
+      expect(
+        FareParser.scalarNgn({
+          'rideId': 'r1',
+          'finalFare': 557000,
+          'grossFare': 557000,
+        }),
+        5570.0,
+      );
+      expect(
+        FareParser.scalarNgn({'estimatedFare': 157000}),
+        1570.0,
+      );
+    });
   });
 }

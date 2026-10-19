@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:smart_auth/smart_auth.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -16,6 +19,7 @@ class OtpVerificationScreen extends StatefulWidget {
     required this.phone,
     this.countryCode = '+234',
     this.onboardingToken,
+    this.devOtp,
   });
 
   /// The full phone number (country code + digits) submitted for verification.
@@ -27,13 +31,20 @@ class OtpVerificationScreen extends StatefulWidget {
   /// Optional onboarding token carried through from social login.
   final String? onboardingToken;
 
+  /// DEV-ONLY OTP echoed by the backend's send-otp response, captured on the
+  /// previous screen and shown here so only ONE code is ever sent. Never set
+  /// in release builds (the backend does not echo it there).
+  final String? devOtp;
+
   @override
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
 }
 
 class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
+  final SmartAuth _smartAuth = SmartAuth.instance;
   final List<TextEditingController> _controllers =
       List.generate(6, (_) => TextEditingController());
+  Timer? _timer;
   int _seconds = 45;
   bool _loading = false;
   bool _sendingOtp = false;
@@ -43,12 +54,32 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   void initState() {
     super.initState();
     _startTimer();
-    // Request a fresh code on open so a testing OTP is available to show.
-    // TODO(dev-only): remove this & the snackbar before release — the code
-    // should only ever arrive via SMS, never from the API response.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!kReleaseMode) _resend();
+      // Android SmsRetriever (via smart_auth): captures the incoming SMS
+      // without any permission. The SMS must contain the app-hash (see
+      // appSignature debug log) — coordinate the format with the backend team.
+      _listenForSmsCode();
+      unawaited(_logAppSignature());
+      _showDevOtp(widget.devOtp);
     });
+  }
+
+  /// Logs the app-hash the backend must embed in the OTP SMS.
+  Future<void> _logAppSignature() async {
+    final res = await _smartAuth.getAppSignature();
+    debugPrint(
+      '[OTP] appSignature for SMS hash: '
+      '${res.hasData ? res.requireData : res.error}',
+    );
+  }
+
+  /// One-shot SMS Retriever listener (Android only; smart_auth is a
+  /// no-op elsewhere). Fills the boxes when the SMS code is captured.
+  Future<void> _listenForSmsCode() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    final res = await _smartAuth.getSmsWithRetrieverApi();
+    if (!mounted || !res.hasData) return;
+    _applySmsCode(res.requireData.code);
   }
 
   /// Shows the server-echoed OTP in a snackbar for development/testing only.
@@ -69,20 +100,39 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   }
 
   void _startTimer() {
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(seconds: 1));
-      if (!mounted || _seconds == 0) return false;
-      setState(() => _seconds--);
-      return true;
+    _timer?.cancel();
+    setState(() => _seconds = 45);
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return;
+      setState(() {
+        _seconds--;
+        if (_seconds <= 0) t.cancel();
+      });
     });
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
+    unawaited(_smartAuth.removeSmsRetrieverApiListener());
     for (final c in _controllers) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// Fills all six boxes when the SMS code is captured (Android retriever).
+  void _applySmsCode(String? code) {
+    final digits = (code ?? '').replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty || !mounted) return;
+    setState(() {
+      for (var i = 0; i < 6; i++) {
+        _controllers[i].text = i < digits.length ? digits[i] : '';
+      }
+      _error = null;
+    });
+    FocusScope.of(context).unfocus();
+    if (digits.length >= 6) _verify();
   }
 
   String get _otp =>
@@ -90,6 +140,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   Future<void> _verify() async {
     if (_loading) return;
+    if (_otp.length != 6) {
+      setState(() => _error = 'Enter the 6-digit code sent to your phone');
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
@@ -207,6 +261,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                           controller: _controllers[i],
                           textAlign: TextAlign.center,
                           keyboardType: TextInputType.number,
+                          autofillHints: const [AutofillHints.oneTimeCode],
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly,
                             LengthLimitingTextInputFormatter(1),

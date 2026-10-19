@@ -36,8 +36,11 @@ class GetStartedScreen extends StatelessWidget {
                   color: AppColors.primaryContainer,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(Icons.shield_outlined,
-                    color: AppColors.onPrimaryContainer, size: 36),
+                child: Image.asset(
+                  'assets/icons/logo.png',
+                  width: 36,
+                  height: 36,
+                ),
               ),
               const SizedBox(height: 24),
               Text(AppConstants.welcomeTitle, style: theme.textTheme.headlineLarge),
